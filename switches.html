@@ -66,13 +66,21 @@ const { useState, useEffect, useMemo, useRef } = React;
 
 // ---------- Course library (par, men's handicap) ----------
 const COURSES = {
-  "Flying Horse": [
+  "Flying Horse Club": [
     { par: 4, hcp: 3 }, { par: 3, hcp: 17 }, { par: 5, hcp: 11 },
     { par: 4, hcp: 5 }, { par: 4, hcp: 1 }, { par: 4, hcp: 7 },
     { par: 3, hcp: 13 }, { par: 5, hcp: 15 }, { par: 4, hcp: 9 },
     { par: 5, hcp: 14 }, { par: 4, hcp: 4 }, { par: 5, hcp: 10 },
     { par: 3, hcp: 16 }, { par: 4, hcp: 2 }, { par: 4, hcp: 18 },
     { par: 3, hcp: 12 }, { par: 4, hcp: 6 }, { par: 4, hcp: 8 },
+  ],
+  "Flying Horse North": [
+    { par: 4, hcp: 9 }, { par: 4, hcp: 3 }, { par: 3, hcp: 11 },
+    { par: 4, hcp: 7 }, { par: 5, hcp: 17 }, { par: 3, hcp: 15 },
+    { par: 4, hcp: 1 }, { par: 5, hcp: 13 }, { par: 4, hcp: 5 },
+    { par: 5, hcp: 4 }, { par: 3, hcp: 18 }, { par: 4, hcp: 6 },
+    { par: 4, hcp: 2 }, { par: 4, hcp: 8 }, { par: 3, hcp: 16 },
+    { par: 4, hcp: 10 }, { par: 4, hcp: 12 }, { par: 5, hcp: 14 },
   ],
 };
 
@@ -153,7 +161,7 @@ function SwitchesScorer() {
   ]);
   const [bet, setBet] = useState("5");
   const [multMode, setMultMode] = useState("double");
-  const [course, setCourse] = useState("Flying Horse");
+  const [course, setCourse] = useState("Flying Horse Club");
   const [startHole, setStartHole] = useState(1);
   const [games, setGames] = useState([]); // {pairingIdx, teams, holes: []}
   const [curGame, setCurGame] = useState(0);

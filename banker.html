@@ -89,7 +89,8 @@ function computeHole(hole, players, minHcp) {
   for (let i = 0; i < n; i++) {
     if (i === hole.banker || nets[i] == null || bankerNet == null) continue;
     const bet = Number(hole.bets[i]) || 0;
-    const used = Math.max(mults[i], bankerMult);
+    const dbl = hole.doubled ? (hole.par === 3 ? 3 : 2) : 1;
+    const used = Math.max(mults[i], bankerMult) * dbl;
     let playerMoney = 0;
     if (nets[i] < bankerNet) {
       outcomes[i] = "W";
@@ -109,13 +110,21 @@ function computeHole(hole, players, minHcp) {
 
 // ---------- Course library (par, men's handicap) ----------
 const COURSES = {
-  "Flying Horse": [
+  "Flying Horse Club": [
     { par: 4, hcp: 3 }, { par: 3, hcp: 17 }, { par: 5, hcp: 11 },
     { par: 4, hcp: 5 }, { par: 4, hcp: 1 }, { par: 4, hcp: 7 },
     { par: 3, hcp: 13 }, { par: 5, hcp: 15 }, { par: 4, hcp: 9 },
     { par: 5, hcp: 14 }, { par: 4, hcp: 4 }, { par: 5, hcp: 10 },
     { par: 3, hcp: 16 }, { par: 4, hcp: 2 }, { par: 4, hcp: 18 },
     { par: 3, hcp: 12 }, { par: 4, hcp: 6 }, { par: 4, hcp: 8 },
+  ],
+  "Flying Horse North": [
+    { par: 4, hcp: 9 }, { par: 4, hcp: 3 }, { par: 3, hcp: 11 },
+    { par: 4, hcp: 7 }, { par: 5, hcp: 17 }, { par: 3, hcp: 15 },
+    { par: 4, hcp: 1 }, { par: 5, hcp: 13 }, { par: 4, hcp: 5 },
+    { par: 5, hcp: 4 }, { par: 3, hcp: 18 }, { par: 4, hcp: 6 },
+    { par: 4, hcp: 2 }, { par: 4, hcp: 8 }, { par: 3, hcp: 16 },
+    { par: 4, hcp: 10 }, { par: 4, hcp: 12 }, { par: 5, hcp: 14 },
   ],
 };
 
@@ -126,6 +135,7 @@ const emptyHole = (num) => ({
   banker: null,
   bets: [null, null, null, null],
   gross: [null, null, null, null],
+  doubled: false,
   done: false,
 });
 
@@ -141,7 +151,7 @@ function BankerScorer() {
     { name: "", hcp: "" },
   ]);
   const [numHoles, setNumHoles] = useState(18);
-  const [course, setCourse] = useState("Flying Horse");
+  const [course, setCourse] = useState("Flying Horse Club");
   const [nine, setNine] = useState("front"); // front | back (for 9-hole rounds)
   const [holes, setHoles] = useState([]);
   const [cur, setCur] = useState(0);
@@ -791,6 +801,34 @@ function BankerScorer() {
                 </div>
               )
             )}
+            <div
+              onClick={() => updateHole({ doubled: !h.doubled })}
+              style={{
+                marginTop: 10, padding: "14px", borderRadius: 10, textAlign: "center",
+                fontWeight: 800, fontSize: 16, cursor: "pointer",
+                border: h.doubled ? "2px solid #b45309" : "2px dashed #cbd5e1",
+                background: h.doubled ? "#fef3c7" : "white",
+                color: h.doubled ? "#b45309" : "#64748b",
+              }}
+            >
+              {h.doubled
+                ? `⚡ DOUBLED — all bets ×${h.par === 3 ? 3 : 2}${h.par === 3 ? " (par 3!)" : ""} · tap to undo`
+                : `⚡ Banker Calls Double (×${h.par === 3 ? 3 : 2})`}
+            </div>
+            {h.doubled && (
+              <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>
+                {active.map((p, i) =>
+                  i === h.banker ? null : (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                      <span>{p.name}</span>
+                      <span>
+                        ${Number(h.bets[i]) || 0} → <b style={{ color: "#b45309" }}>${(Number(h.bets[i]) || 0) * (h.par === 3 ? 3 : 2)}</b>
+                      </span>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -845,6 +883,11 @@ function BankerScorer() {
           <div style={{ ...S.card, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
             <div style={{ ...S.label, marginBottom: 8 }}>
               Hole Result — {active[h.banker].name} nets {preview.nets[h.banker]}
+              {h.doubled && (
+                <span style={{ marginLeft: 8, color: "#b45309", fontWeight: 800 }}>
+                  ⚡ ×{h.par === 3 ? 3 : 2}
+                </span>
+              )}
             </div>
             {active.map((p, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 15 }}>
@@ -917,7 +960,9 @@ function BankerScorer() {
                       setPhase("play");
                     }}
                   >
-                    <td style={{ padding: 6, fontWeight: 700 }}>{hh.num}</td>
+                    <td style={{ padding: 6, fontWeight: 700 }}>
+                      {hh.num}{hh.doubled && <span style={{ color: "#b45309" }}> ⚡</span>}
+                    </td>
                     <td style={{ padding: 6, textAlign: "center" }}>{hh.par}</td>
                     <td style={{ padding: 6, textAlign: "center", fontSize: 11 }}>
                       {hh.banker != null ? active[hh.banker].name.slice(0, 3) : "–"}
@@ -1063,7 +1108,6 @@ function BankerScorer() {
     </div>
   );
 }
-
 
 ReactDOM.createRoot(document.getElementById("root")).render(<BankerScorer />);
 </script>

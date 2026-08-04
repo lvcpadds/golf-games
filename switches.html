@@ -82,6 +82,62 @@ const COURSES = {
     { par: 4, hcp: 2 }, { par: 4, hcp: 8 }, { par: 3, hcp: 16 },
     { par: 4, hcp: 10 }, { par: 4, hcp: 12 }, { par: 5, hcp: 14 },
   ],
+  "Keystone River Course": [
+    { par: 5, hcp: 15 }, { par: 4, hcp: 17 }, { par: 3, hcp: 1 },
+    { par: 4, hcp: 11 }, { par: 5, hcp: 3 }, { par: 4, hcp: 5 },
+    { par: 3, hcp: 9 }, { par: 4, hcp: 7 }, { par: 3, hcp: 13 },
+    { par: 4, hcp: 8 }, { par: 4, hcp: 6 }, { par: 3, hcp: 12 },
+    { par: 5, hcp: 14 }, { par: 4, hcp: 4 }, { par: 3, hcp: 10 },
+    { par: 4, hcp: 2 }, { par: 4, hcp: 16 }, { par: 5, hcp: 18 },
+  ],
+  "Beaver Creek GC": [
+    { par: 5, hcp: 3 }, { par: 3, hcp: 15 }, { par: 5, hcp: 1 },
+    { par: 3, hcp: 17 }, { par: 4, hcp: 5 }, { par: 4, hcp: 9 },
+    { par: 4, hcp: 11 }, { par: 4, hcp: 13 }, { par: 4, hcp: 7 },
+    { par: 3, hcp: 14 }, { par: 4, hcp: 10 }, { par: 3, hcp: 16 },
+    { par: 5, hcp: 6 }, { par: 4, hcp: 2 }, { par: 4, hcp: 12 },
+    { par: 3, hcp: 18 }, { par: 4, hcp: 8 }, { par: 4, hcp: 4 },
+  ],
+};
+
+// Courses with three (or more) nines you can mix and match
+const NINE_COURSES = {
+  "Breckenridge GC": {
+    Beaver: [
+      { par: 4, hcp: 4 }, { par: 5, hcp: 6 }, { par: 3, hcp: 9 },
+      { par: 4, hcp: 5 }, { par: 4, hcp: 3 }, { par: 4, hcp: 8 },
+      { par: 4, hcp: 2 }, { par: 5, hcp: 1 }, { par: 3, hcp: 7 },
+    ],
+    Bear: [
+      { par: 4, hcp: 6 }, { par: 5, hcp: 9 }, { par: 4, hcp: 4 },
+      { par: 3, hcp: 8 }, { par: 4, hcp: 7 }, { par: 5, hcp: 3 },
+      { par: 3, hcp: 5 }, { par: 4, hcp: 2 }, { par: 4, hcp: 1 },
+    ],
+    Elk: [
+      { par: 4, hcp: 9 }, { par: 5, hcp: 3 }, { par: 3, hcp: 8 },
+      { par: 4, hcp: 5 }, { par: 3, hcp: 7 }, { par: 4, hcp: 6 },
+      { par: 4, hcp: 1 }, { par: 5, hcp: 2 }, { par: 4, hcp: 4 },
+    ],
+  },
+};
+
+const NINE_NAMES = (c) => (NINE_COURSES[c] ? Object.keys(NINE_COURSES[c]) : []);
+const isMultiNine = (c) => !!NINE_COURSES[c];
+const ALL_COURSES = [...Object.keys(COURSES), ...Object.keys(NINE_COURSES)];
+
+// Resolve a playable 18-hole layout. For multi-nine courses the chosen front
+// nine takes odd handicaps 1-17 and the back nine takes evens 2-18.
+const resolveLayout = (course, nineA, nineB) => {
+  if (COURSES[course]) return COURSES[course];
+  const nines = NINE_COURSES[course];
+  if (!nines) return null;
+  const names = Object.keys(nines);
+  const a = nines[nineA] || nines[names[0]];
+  const b = nines[nineB] || nines[names[1]] || a;
+  return [
+    ...a.map((h) => ({ par: h.par, hcp: h.hcp * 2 - 1 })),
+    ...b.map((h) => ({ par: h.par, hcp: h.hcp * 2 })),
+  ];
 };
 
 // Pairing rotation. Seats: 0 = Cart 1 Driver, 1 = Cart 1 Pass, 2 = Cart 2 Driver, 3 = Cart 2 Pass
@@ -146,8 +202,8 @@ function computeGame(game, players, minHcp, multMode) {
 
 const INDEX_KEY = "switches-rounds-index";
 const roundKey = (id) => `switches-round:${id}`;
-const newHole = (num, course) => {
-  const c = COURSES[course]?.[num - 1];
+const newHole = (num, layout) => {
+  const c = layout?.[num - 1];
   return { num, par: c?.par ?? 4, holeHcp: c?.hcp ?? "", gross: [null, null, null, null] };
 };
 
@@ -162,6 +218,8 @@ function SwitchesScorer() {
   const [bet, setBet] = useState("5");
   const [multMode, setMultMode] = useState("double");
   const [course, setCourse] = useState("Flying Horse Club");
+  const [nineA, setNineA] = useState("Beaver");
+  const [nineB, setNineB] = useState("Bear");
   const [startHole, setStartHole] = useState(1);
   const [games, setGames] = useState([]); // {pairingIdx, teams, holes: []}
   const [curGame, setCurGame] = useState(0);
@@ -231,6 +289,8 @@ function SwitchesScorer() {
       const s = JSON.parse(r.value);
       setPlayers(s.players); setBet(s.bet); setMultMode(s.multMode);
       setCourse(s.course); setStartHole(s.startHole);
+      if (s.nineA) setNineA(s.nineA);
+      if (s.nineB) setNineB(s.nineB);
       setGames(s.games); setCurGame(s.curGame);
       setRoundId(id);
       setRoundStatus(s.status || "in-progress");
@@ -239,7 +299,7 @@ function SwitchesScorer() {
   };
 
   // Keep a ref of latest state so saves always write current data
-  stateRef.current = { players, bet, multMode, course, startHole, games, curGame, phase, roundStatus, roundId, savedRounds };
+  stateRef.current = { players, bet, multMode, course, nineA, nineB, startHole, games, curGame, phase, roundStatus, roundId, savedRounds };
 
   const saveNow = async (attempt = 0) => {
     const st = stateRef.current;
@@ -258,7 +318,7 @@ function SwitchesScorer() {
         roundKey(st.roundId),
         JSON.stringify({
           players: st.players, bet: st.bet, multMode: st.multMode, course: st.course,
-          startHole: st.startHole, games: st.games, curGame: st.curGame,
+          nineA: st.nineA, nineB: st.nineB, startHole: st.startHole, games: st.games, curGame: st.curGame,
           phase: st.phase, status: st.roundStatus,
         })
       );
@@ -285,7 +345,7 @@ function SwitchesScorer() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => saveNow(), 900);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [players, bet, multMode, course, startHole, games, curGame, roundStatus, loaded, roundId]);
+  }, [players, bet, multMode, course, nineA, nineB, startHole, games, curGame, roundStatus, loaded, roundId]);
 
   const deleteRound = async (id) => {
     if (!window.confirm("Delete this saved round?")) return;
@@ -304,6 +364,7 @@ function SwitchesScorer() {
 
   const minHcp = useMemo(() => Math.min(...players.map((p) => Number(p.hcp) || 0)), [players]);
   const betNum = Number(bet) || 0;
+  const layout = useMemo(() => resolveLayout(course, nineA, nineB), [course, nineA, nineB]);
   const gameResults = useMemo(
     () => games.map((g) => computeGame(g, players, minHcp, multMode)),
     [games, players, minHcp, multMode]
@@ -347,7 +408,7 @@ function SwitchesScorer() {
     const g = {
       pairingIdx,
       teams: PAIRINGS[pairingIdx].teams,
-      holes: [newHole(nextHoleNum, course)],
+      holes: [newHole(nextHoleNum, layout)],
     };
     setGames([...games, g]);
     setCurGame(games.length);
@@ -566,9 +627,25 @@ function SwitchesScorer() {
         <div style={S.card}>
           <div style={{ ...S.label, marginBottom: 8 }}>Course</div>
           <select style={{ ...S.input, background: "white" }} value={course} onChange={(e) => setCourse(e.target.value)}>
-            {Object.keys(COURSES).map((c) => (<option key={c} value={c}>{c}</option>))}
+            {ALL_COURSES.map((c) => (<option key={c} value={c}>{c}</option>))}
             <option value="__manual__">Manual entry</option>
           </select>
+          {isMultiNine(course) && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ ...S.label, marginBottom: 6 }}>Which nines?</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <select style={{ ...S.input, background: "white" }} value={nineA}
+                  onChange={(e) => setNineA(e.target.value)}>
+                  {NINE_NAMES(course).map((n) => (<option key={n} value={n}>{n}</option>))}
+                </select>
+                <span style={{ color: "#94a3b8", fontWeight: 700 }}>then</span>
+                <select style={{ ...S.input, background: "white" }} value={nineB}
+                  onChange={(e) => setNineB(e.target.value)}>
+                  {NINE_NAMES(course).map((n) => (<option key={n} value={n}>{n}</option>))}
+                </select>
+              </div>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             {[[1, "Start Hole 1"], [10, "Start Hole 10"]].map(([n, l]) => (
               <div key={n} style={S.chip(startHole === n)} onClick={() => setStartHole(n)}>{l}</div>
@@ -636,7 +713,7 @@ function SwitchesScorer() {
   const advanceHole = () => {
     if (h.num >= 18) return;
     const ng = JSON.parse(JSON.stringify(games));
-    ng[curGame].holes.push(newHole(h.num + 1, course));
+    ng[curGame].holes.push(newHole(h.num + 1, layout));
     setGames(ng);
   };
   const cyclePairing = () => {
@@ -818,7 +895,7 @@ function SwitchesScorer() {
       return (
         <tr key={n} style={{ borderBottom: "1px solid #f1f5f9" }}>
           <td style={{ ...cell, textAlign: "left", fontWeight: 700 }}>{n}</td>
-          <td style={{ ...cell, color: "#64748b" }}>{hh?.par ?? COURSES[course]?.[n - 1]?.par ?? "–"}</td>
+          <td style={{ ...cell, color: "#64748b" }}>{hh?.par ?? layout?.[n - 1]?.par ?? "–"}</td>
           {players.map((_, i) => {
             const gsc = hh?.gross[i];
             const par = hh?.par;
@@ -982,7 +1059,6 @@ function SwitchesScorer() {
     </div>
   );
 }
-
 
 ReactDOM.createRoot(document.getElementById("root")).render(<SwitchesScorer />);
 </script>

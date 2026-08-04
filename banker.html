@@ -126,6 +126,62 @@ const COURSES = {
     { par: 4, hcp: 2 }, { par: 4, hcp: 8 }, { par: 3, hcp: 16 },
     { par: 4, hcp: 10 }, { par: 4, hcp: 12 }, { par: 5, hcp: 14 },
   ],
+  "Keystone River Course": [
+    { par: 5, hcp: 15 }, { par: 4, hcp: 17 }, { par: 3, hcp: 1 },
+    { par: 4, hcp: 11 }, { par: 5, hcp: 3 }, { par: 4, hcp: 5 },
+    { par: 3, hcp: 9 }, { par: 4, hcp: 7 }, { par: 3, hcp: 13 },
+    { par: 4, hcp: 8 }, { par: 4, hcp: 6 }, { par: 3, hcp: 12 },
+    { par: 5, hcp: 14 }, { par: 4, hcp: 4 }, { par: 3, hcp: 10 },
+    { par: 4, hcp: 2 }, { par: 4, hcp: 16 }, { par: 5, hcp: 18 },
+  ],
+  "Beaver Creek GC": [
+    { par: 5, hcp: 3 }, { par: 3, hcp: 15 }, { par: 5, hcp: 1 },
+    { par: 3, hcp: 17 }, { par: 4, hcp: 5 }, { par: 4, hcp: 9 },
+    { par: 4, hcp: 11 }, { par: 4, hcp: 13 }, { par: 4, hcp: 7 },
+    { par: 3, hcp: 14 }, { par: 4, hcp: 10 }, { par: 3, hcp: 16 },
+    { par: 5, hcp: 6 }, { par: 4, hcp: 2 }, { par: 4, hcp: 12 },
+    { par: 3, hcp: 18 }, { par: 4, hcp: 8 }, { par: 4, hcp: 4 },
+  ],
+};
+
+// Courses with three (or more) nines you can mix and match
+const NINE_COURSES = {
+  "Breckenridge GC": {
+    Beaver: [
+      { par: 4, hcp: 4 }, { par: 5, hcp: 6 }, { par: 3, hcp: 9 },
+      { par: 4, hcp: 5 }, { par: 4, hcp: 3 }, { par: 4, hcp: 8 },
+      { par: 4, hcp: 2 }, { par: 5, hcp: 1 }, { par: 3, hcp: 7 },
+    ],
+    Bear: [
+      { par: 4, hcp: 6 }, { par: 5, hcp: 9 }, { par: 4, hcp: 4 },
+      { par: 3, hcp: 8 }, { par: 4, hcp: 7 }, { par: 5, hcp: 3 },
+      { par: 3, hcp: 5 }, { par: 4, hcp: 2 }, { par: 4, hcp: 1 },
+    ],
+    Elk: [
+      { par: 4, hcp: 9 }, { par: 5, hcp: 3 }, { par: 3, hcp: 8 },
+      { par: 4, hcp: 5 }, { par: 3, hcp: 7 }, { par: 4, hcp: 6 },
+      { par: 4, hcp: 1 }, { par: 5, hcp: 2 }, { par: 4, hcp: 4 },
+    ],
+  },
+};
+
+const NINE_NAMES = (c) => (NINE_COURSES[c] ? Object.keys(NINE_COURSES[c]) : []);
+const isMultiNine = (c) => !!NINE_COURSES[c];
+const ALL_COURSES = [...Object.keys(COURSES), ...Object.keys(NINE_COURSES)];
+
+// Resolve a playable 18-hole layout. For multi-nine courses the chosen front
+// nine takes odd handicaps 1-17 and the back nine takes evens 2-18.
+const resolveLayout = (course, nineA, nineB) => {
+  if (COURSES[course]) return COURSES[course];
+  const nines = NINE_COURSES[course];
+  if (!nines) return null;
+  const names = Object.keys(nines);
+  const a = nines[nineA] || nines[names[0]];
+  const b = nines[nineB] || nines[names[1]] || a;
+  return [
+    ...a.map((h) => ({ par: h.par, hcp: h.hcp * 2 - 1 })),
+    ...b.map((h) => ({ par: h.par, hcp: h.hcp * 2 })),
+  ];
 };
 
 const emptyHole = (num) => ({
@@ -152,6 +208,8 @@ function BankerScorer() {
   ]);
   const [numHoles, setNumHoles] = useState(18);
   const [course, setCourse] = useState("Flying Horse Club");
+  const [nineA, setNineA] = useState("Beaver");
+  const [nineB, setNineB] = useState("Bear");
   const [nine, setNine] = useState("front"); // front | back (for 9-hole rounds)
   const [holes, setHoles] = useState([]);
   const [cur, setCur] = useState(0);
@@ -186,6 +244,8 @@ function BankerScorer() {
       setPlayers(s.players);
       setNumHoles(s.numHoles);
       setCourse(s.course ?? "__manual__");
+      if (s.nineA) setNineA(s.nineA);
+      if (s.nineB) setNineB(s.nineB);
       setHoles(s.holes);
       setCur(s.cur);
       setRoundId(id);
@@ -225,7 +285,7 @@ function BankerScorer() {
   }, []);
 
   // Keep a ref of the latest state so saves always write current data
-  stateRef.current = { players, numHoles, course, holes, cur, phase, roundStatus, roundId, savedRounds };
+  stateRef.current = { players, numHoles, course, nineA, nineB, holes, cur, phase, roundStatus, roundId, savedRounds };
 
   const saveNow = async (attempt = 0) => {
     const st = stateRef.current;
@@ -245,6 +305,7 @@ function BankerScorer() {
         roundKey(st.roundId),
         JSON.stringify({
           players: st.players, numHoles: st.numHoles, course: st.course,
+          nineA: st.nineA, nineB: st.nineB,
           holes: st.holes, cur: st.cur, phase: st.phase, status: st.roundStatus,
         })
       );
@@ -272,7 +333,7 @@ function BankerScorer() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => saveNow(), 900);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
-  }, [players, numHoles, course, holes, cur, roundStatus, loaded, roundId]);
+  }, [players, numHoles, course, nineA, nineB, holes, cur, roundStatus, loaded, roundId]);
 
   const deleteRound = async (id) => {
     if (!window.confirm("Delete this saved round?")) return;
@@ -395,7 +456,7 @@ function BankerScorer() {
   const startRound = () => {
     setRoundId(new Date().toISOString().slice(0, 10) + "-" + Date.now());
     setRoundStatus("in-progress");
-    const data = COURSES[course];
+    const data = resolveLayout(course, nineA, nineB);
     const offset = numHoles === 9 && nine === "back" ? 9 : 0;
     setHoles(
       Array.from({ length: numHoles }, (_, i) => {
@@ -606,11 +667,33 @@ function BankerScorer() {
             value={course}
             onChange={(e) => setCourse(e.target.value)}
           >
-            {Object.keys(COURSES).map((c) => (
+            {ALL_COURSES.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
             <option value="__manual__">Manual entry (no preload)</option>
           </select>
+          {isMultiNine(course) && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ ...S.label, marginBottom: 6 }}>
+                {numHoles === 18 ? "Which nines?" : "Which nine?"}
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <select style={{ ...S.input, background: "white" }} value={nineA}
+                  onChange={(e) => setNineA(e.target.value)}>
+                  {NINE_NAMES(course).map((n) => (<option key={n} value={n}>{n}</option>))}
+                </select>
+                {numHoles === 18 && (
+                  <>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>then</span>
+                    <select style={{ ...S.input, background: "white" }} value={nineB}
+                      onChange={(e) => setNineB(e.target.value)}>
+                      {NINE_NAMES(course).map((n) => (<option key={n} value={n}>{n}</option>))}
+                    </select>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
           <div style={{ fontSize: 13, color: "#64748b", marginTop: 6 }}>
             Preloads par + men's handicap for each hole. You can still tweak on any hole.
           </div>
@@ -624,7 +707,7 @@ function BankerScorer() {
               </div>
             ))}
           </div>
-          {numHoles === 9 && COURSES[course] && (
+          {numHoles === 9 && COURSES[course] && !isMultiNine(course) && (
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               {[["front", "Front 9"], ["back", "Back 9"]].map(([k, l]) => (
                 <div key={k} style={S.chip(nine === k)} onClick={() => setNine(k)}>

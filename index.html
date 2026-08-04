@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flying Horse Golf Games</title>
+<style>
+  body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .wrap { max-width: 420px; width: 100%; padding: 24px; }
+  h1 { text-align: center; color: #0f172a; font-size: 26px; margin-bottom: 4px; }
+  p.sub { text-align: center; color: #64748b; margin-top: 0; font-size: 14px; }
+  a.card { display: block; background: white; border-radius: 16px; padding: 22px; margin-top: 16px; text-decoration: none; box-shadow: 0 1px 4px rgba(0,0,0,0.08); transition: transform 0.1s; }
+  a.card:active { transform: scale(0.98); }
+  .title { font-size: 22px; font-weight: 800; }
+  .banker .title { color: #14532d; }
+  .switches .title { color: #1e3a8a; }
+  .desc { color: #64748b; font-size: 14px; margin-top: 6px; line-height: 1.5; }
+  .tip { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 24px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⛳ Golf Games</h1>
+  <p class="sub">Flying Horse money game scorers</p>
+  <a class="card banker" href="banker.html">
+    <div class="title">🏦 Banker</div>
+    <div class="desc">Every player takes on the banker. Out-of-the-tee-box bets, birdie 2x / eagle 3x, net off the low man.</div>
+  </a>
+  <a class="card switches" href="switches.html">
+    <div class="title">🔀 Switches</div>
+    <div class="desc">Four-ball match play in rotating pairings. Two points a hole, and the pot multiplies every time the lead flips.</div>
+  </a>
+  <div class="tip">
+    On iPhone: open a game, tap Share → <b>Add to Home Screen</b><br>for a full-screen app with saved round history.
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>SuperBanker 🏦 Big Group Golf</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #f1f5f9; }
+  #root { min-height: 100vh; }
+  input, select, button { font-family: inherit; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(function () {
+  let backend;
+  try {
+    localStorage.setItem("__ping", "1");
+    localStorage.removeItem("__ping");
+    backend = localStorage;
+  } catch (e) {
+    const mem = new Map();
+    backend = {
+      getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+      setItem: (k, v) => mem.set(k, String(v)),
+      removeItem: (k) => mem.delete(k),
+      get length() { return mem.size; },
+      key: (i) => Array.from(mem.keys())[i],
+    };
+    console.warn("localStorage unavailable; using in-memory storage");
+  }
+  window.storage = {
+    get: async (k) => { const v = backend.getItem(k); return v === null ? null : { key: k, value: v }; },
+    set: async (k, v) => { backend.setItem(k, v); return { key: k, value: v }; },
+    delete: async (k) => { backend.removeItem(k); return { key: k, deleted: true }; },
+    list: async (prefix) => {
+      const keys = [];
+      for (let i = 0; i < backend.length; i++) {
+        const k = backend.key(i);
+        if (!prefix || k.startsWith(prefix)) keys.push(k);
+      }
+      return { keys };
+    },
+  };
+})();
+</script>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useRef } = React;
+
+// ---------- Courses ----------
+const COURSES = {
+  "Flying Horse Club": [
+    { par: 4, hcp: 3 }, { par: 3, hcp: 17 }, { par: 5, hcp: 11 },
+    { par: 4, hcp: 5 }, { par: 4, hcp: 1 }, { par: 4, hcp: 7 },
+    { par: 3, hcp: 13 }, { par: 5, hcp: 15 }, { par: 4, hcp: 9 },
+    { par: 5, hcp: 14 }, { par: 4, hcp: 4 }, { par: 5, hcp: 10 },
+    { par: 3, hcp: 16 }, { par: 4, hcp: 2 }, { par: 4, hcp: 18 },
+    { par: 3, hcp: 12 }, { par: 4, hcp: 6 }, { par: 4, hcp: 8 },
+  ],
+  "Flying Horse North": [
+    { par: 4, hcp: 9 }, { par: 4, hcp: 3 }, { par: 3, hcp: 11 },
+    { par: 4, hcp: 7 }, { par: 5, hcp: 17 }, { par: 3, hcp: 15 },
+    { par: 4, hcp: 1 }, { par: 5, hcp: 13 }, { par: 4, hcp: 5 },
+    { par: 5, hcp: 4 }, { par: 3, hcp: 18 }, { par: 4, hcp: 6 },
+    { par: 4, hcp: 2 }, { par: 4, hcp: 8 }, { par: 3, hcp: 16 },
+    { par: 4, hcp: 10 }, { par: 4, hcp: 12 }, { par: 5, hcp: 14 },
+  ],
+  "Keystone River Course": [
+    { par: 5, hcp: 15 }, { par: 4, hcp: 17 }, { par: 3, hcp: 1 },
+    { par: 4, hcp: 11 }, { par: 5, hcp: 3 }, { par: 4, hcp: 5 },
+    { par: 3, hcp: 9 }, { par: 4, hcp: 7 }, { par: 3, hcp: 13 },
+    { par: 4, hcp: 8 }, { par: 4, hcp: 6 }, { par: 3, hcp: 12 },
+    { par: 5, hcp: 14 }, { par: 4, hcp: 4 }, { par: 3, hcp: 10 },
+    { par: 4, hcp: 2 }, { par: 4, hcp: 16 }, { par: 5, hcp: 18 },
+  ],
+  "Beaver Creek GC": [
+    { par: 5, hcp: 3 }, { par: 3, hcp: 15 }, { par: 5, hcp: 1 },
+    { par: 3, hcp: 17 }, { par: 4, hcp: 5 }, { par: 4, hcp: 9 },
+    { par: 4, hcp: 11 }, { par: 4, hcp: 13 }, { par: 4, hcp: 7 },
+    { par: 3, hcp: 14 }, { par: 4, hcp: 10 }, { par: 3, hcp: 16 },
+    { par: 5, hcp: 6 }, { par: 4, hcp: 2 }, { par: 4, hcp: 12 },
+    { par: 3, hcp: 18 }, { par: 4, hcp: 8 }, { par: 4, hcp: 4 },
+  ],
+};
+
+const NINE_COURSES = {
+  "Breckenridge GC": {
+    Beaver: [
+      { par: 4, hcp: 4 }, { par: 5, hcp: 6 }, { par: 3, hcp: 9 },
+      { par: 4, hcp: 5 }, { par: 4, hcp: 3 }, { par: 4, hcp: 8 },
+      { par: 4, hcp: 2 }, { par: 5, hcp: 1 }, { par: 3, hcp: 7 },
+    ],
+    Bear: [
+      { par: 4, hcp: 6 }, { par: 5, hcp: 9 }, { par: 4, hcp: 4 },
+      { par: 3, hcp: 8 }, { par: 4, hcp: 7 }, { par: 5, hcp: 3 },
+      { par: 3, hcp: 5 }, { par: 4, hcp: 2 }, { par: 4, hcp: 1 },
+    ],
+    Elk: [
+      { par: 4, hcp: 9 }, { par: 5, hcp: 3 }, { par: 3, hcp: 8 },
+      { par: 4, hcp: 5 }, { par: 3, hcp: 7 }, { par: 4, hcp: 6 },
+      { par: 4, hcp: 1 }, { par: 5, hcp: 2 }, { par: 4, hcp: 4 },
+    ],
+  },
+};
+
+const NINE_NAMES = (c) => (NINE_COURSES[c] ? Object.keys(NINE_COURSES[c]) : []);
+const isMultiNine = (c) => !!NINE_COURSES[c];
+const ALL_COURSES = [...Object.keys(COURSES), ...Object.keys(NINE_COURSES)];
+
+const resolveLayout = (course, nineA, nineB) => {
+  if (COURSES[course]) return COURSES[course];
+  const nines = NINE_COURSES[course];
+  if (!nines) return null;
+  const names = Object.keys(nines);
+  const a = nines[nineA] || nines[names[0]];
+  const b = nines[nineB] || nines[names[1]] || a;
+  return [
+    ...a.map((h) => ({ par: h.par, hcp: h.hcp * 2 - 1 })),
+    ...b.map((h) => ({ par: h.par, hcp: h.hcp * 2 })),
+  ];
+};
+
+// ---------- Game math ----------
+const strokeFor = (handiCalc, holeHcp) => (handiCalc >= holeHcp ? 1 : 0);
+const multFor = (gross, par) => {
+  const d = gross - par;
+  if (d <= -2) return 3;
+  if (d === -1) return 2;
+  return 1;
+};
+
+function computeHole(hole, players, minHcp) {
+  const n = players.length;
+  const strokes = players.map((p) => strokeFor((Number(p.hcp) || 0) - minHcp, hole.holeHcp || 99));
+  const nets = hole.gross.map((g, i) => (g == null ? null : g - strokes[i]));
+  const bankerNet = hole.banker == null ? null : nets[hole.banker];
+  const mults = hole.gross.map((g) => (g == null ? 1 : multFor(g, hole.par)));
+  const bankerMult = hole.banker == null ? 1 : mults[hole.banker];
+  const dbl = hole.doubled ? (hole.par === 3 ? 3 : 2) : 1;
+  const money = new Array(n).fill(0);
+  const outcomes = new Array(n).fill(null);
+  let bankerTotal = 0;
+  for (let i = 0; i < n; i++) {
+    if (i === hole.banker || nets[i] == null || bankerNet == null) continue;
+    const bet = Number(hole.bets[i]) || 0;
+    const used = Math.max(mults[i], bankerMult) * dbl;
+    let m = 0;
+    if (nets[i] < bankerNet) { outcomes[i] = "W"; m = bet * used; }
+    else if (nets[i] === bankerNet) { outcomes[i] = "D"; }
+    else { outcomes[i] = "L"; m = -bet * used; }
+    money[i] = m;
+    bankerTotal -= m;
+  }
+  if (hole.banker != null) money[hole.banker] = bankerTotal;
+  return { strokes, nets, mults, money, outcomes, bankerNet, dbl };
+}
+
+const INDEX_KEY = "superbanker-rounds-index";
+const roundKey = (id) => `superbanker-round:${id}`;
+const MAX_PLAYERS = 16;
+
+function SuperBanker() {
+  const [phase, setPhase] = useState("setup"); // setup | play | card | summary
+  const [players, setPlayers] = useState(
+    Array.from({ length: 4 }, () => ({ name: "", hcp: "" }))
+  );
+  const [defaultBet, setDefaultBet] = useState("5");
+  const [numHoles, setNumHoles] = useState(18);
+  const [course, setCourse] = useState("Flying Horse Club");
+  const [nineA, setNineA] = useState("Beaver");
+  const [nineB, setNineB] = useState("Bear");
+  const [nine, setNine] = useState("front");
+  const [holes, setHoles] = useState([]);
+  const [cur, setCur] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [roundId, setRoundId] = useState(null);
+  const [roundStatus, setRoundStatus] = useState("in-progress");
+  const [savedRounds, setSavedRounds] = useState([]);
+  const [saveState, setSaveState] = useState("idle");
+  const [lastError, setLastError] = useState(null);
+  const [showBets, setShowBets] = useState(false);
+  const [exportImg, setExportImg] = useState(null);
+  const stateRef = useRef({});
+  const saveTimer = useRef(null);
+
+  const active = useMemo(() => players.filter((p) => p.name.trim() !== ""), [players]);
+  const minHcp = useMemo(
+    () => (active.length ? Math.min(...active.map((p) => Number(p.hcp) || 0)) : 0),
+    [active]
+  );
+  const layout = useMemo(() => resolveLayout(course, nineA, nineB), [course, nineA, nineB]);
+  const betNum = Number(defaultBet) || 0;
+
+  const emptyHole = (num, lay) => {
+    const c = lay?.[num - 1];
+    return {
+      num,
+      par: c?.par ?? 4,
+      holeHcp: c?.hcp ?? "",
+      banker: null,
+      bets: new Array(MAX_PLAYERS).fill(null),
+      gross: new Array(MAX_PLAYERS).fill(null),
+      doubled: false,
+      done: false,
+    };
+  };
+
+  // ---- persistence ----
+  const loadIndex = async () => {
+    try {
+      const r = await window.storage.get(INDEX_KEY);
+      const idx = r?.value ? JSON.parse(r.value) : [];
+      setSavedRounds(idx);
+      return idx;
+    } catch (e) { setSavedRounds([]); return []; }
+  };
+
+  const loadRound = async (id) => {
+    try {
+      const r = await window.storage.get(roundKey(id));
+      if (!r?.value) return;
+      const s = JSON.parse(r.value);
+      setPlayers(s.players);
+      setDefaultBet(s.defaultBet ?? "5");
+      setNumHoles(s.numHoles);
+      setCourse(s.course ?? "__manual__");
+      if (s.nineA) setNineA(s.nineA);
+      if (s.nineB) setNineB(s.nineB);
+      setHoles(s.holes);
+      setCur(s.cur);
+      setRoundId(id);
+      setRoundStatus(s.status || "in-progress");
+      setPhase(s.status === "complete" ? "summary" : s.phase === "setup" ? "play" : s.phase);
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    (async () => {
+      const idx = await loadIndex();
+      const inProg = idx.find((e) => e.status === "in-progress");
+      if (inProg) await loadRound(inProg.id);
+      setLoaded(true);
+    })();
+  }, []);
+
+  stateRef.current = { players, defaultBet, numHoles, course, nineA, nineB, holes, cur, phase, roundStatus, roundId, savedRounds };
+
+  const saveNow = async (attempt = 0) => {
+    const st = stateRef.current;
+    if (!st.roundId || st.holes.length === 0) return false;
+    setSaveState("saving");
+    const meta = {
+      id: st.roundId,
+      date: st.roundId.slice(0, 10),
+      course: st.course,
+      status: st.roundStatus,
+      players: st.players.filter((p) => p.name.trim()).map((p) => p.name),
+      holesScored: st.holes.filter((h) => h.done).length,
+      numHoles: st.holes.length,
+    };
+    try {
+      await window.storage.set(roundKey(st.roundId), JSON.stringify({
+        players: st.players, defaultBet: st.defaultBet, numHoles: st.numHoles,
+        course: st.course, nineA: st.nineA, nineB: st.nineB,
+        holes: st.holes, cur: st.cur, phase: st.phase, status: st.roundStatus,
+      }));
+      const idx = [meta, ...st.savedRounds.filter((e) => e.id !== st.roundId)];
+      await window.storage.set(INDEX_KEY, JSON.stringify(idx));
+      setSavedRounds(idx);
+      setSaveState("saved");
+      return true;
+    } catch (e) {
+      if (attempt < 2) {
+        await new Promise((res) => setTimeout(res, 1200 * (attempt + 1)));
+        return saveNow(attempt + 1);
+      }
+      setSaveState("error");
+      setLastError((e?.message || String(e)).slice(0, 200));
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    if (!loaded || !roundId || holes.length === 0) return;
+    setSaveState("saving");
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => saveNow(), 900);
+    return () => saveTimer.current && clearTimeout(saveTimer.current);
+  }, [players, defaultBet, numHoles, course, nineA, nineB, holes, cur, roundStatus, loaded, roundId]);
+
+  const deleteRound = async (id) => {
+    if (!window.confirm("Delete this saved round?")) return;
+    try { await window.storage.delete(roundKey(id)); } catch (e) {}
+    const idx = savedRounds.filter((e) => e.id !== id);
+    setSavedRounds(idx);
+    try { await window.storage.set(INDEX_KEY, JSON.stringify(idx)); } catch (e) {}
+    if (id === roundId) { setRoundId(null); setHoles([]); setCur(0); setPhase("setup"); }
+  };
+
+  // ---- results ----
+  const results = useMemo(
+    () => holes.map((h) => (h.done ? computeHole(h, active, minHcp) : null)),
+    [holes, active, minHcp]
+  );
+
+  const totals = useMemo(() => {
+    const n = active.length;
+    const money = new Array(n).fill(0);
+    const grossTot = new Array(n).fill(0);
+    const parTot = new Array(n).fill(0);
+    const bankerCount = new Array(n).fill(0);
+    const bankerMoney = new Array(n).fill(0);
+    let bankerNetAll = 0, bankerHoles = 0;
+    holes.forEach((h, hi) => {
+      const r = results[hi];
+      if (!r) return;
+      if (h.banker != null) {
+        bankerCount[h.banker]++;
+        bankerMoney[h.banker] += r.money[h.banker];
+        bankerNetAll += r.money[h.banker];
+        bankerHoles++;
+      }
+      for (let i = 0; i < n; i++) {
+        money[i] += r.money[i];
+        if (h.gross[i] != null) { grossTot[i] += h.gross[i]; parTot[i] += h.par; }
+      }
+    });
+    return { money, grossTot, parTot, bankerCount, bankerMoney, bankerNetAll, bankerHoles };
+  }, [holes, results, active]);
+
+  const startRound = () => {
+    setRoundId(new Date().toISOString().slice(0, 10) + "-" + Date.now());
+    setRoundStatus("in-progress");
+    const offset = numHoles === 9 && nine === "back" && !isMultiNine(course) ? 9 : 0;
+    setHoles(Array.from({ length: numHoles }, (_, i) => emptyHole(offset + i + 1, layout)));
+    setCur(0);
+    setPhase("play");
+  };
+
+  const resetAll = () => {
+    if (!window.confirm("Start a new round? This one stays saved in your library.")) return;
+    setRoundId(null); setRoundStatus("in-progress");
+    setHoles([]); setCur(0); setPhase("setup");
+  };
+
+  const fmt = (v) => (v < 0 ? `-$${Math.abs(v).toFixed(v % 1 ? 2 : 0)}` : `$${v.toFixed(v % 1 ? 2 : 0)}`);
+  const mColor = (v) => (v > 0 ? "#15803d" : v < 0 ? "#b91c1c" : "#64748b");
+
+  const S = {
+    app: { maxWidth: 480, margin: "0 auto", fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f1f5f9", minHeight: "100vh", paddingBottom: 90 },
+    header: { background: "#4c1d95", color: "white", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10 },
+    card: { background: "white", borderRadius: 12, padding: 16, margin: "12px 12px 0", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" },
+    label: { fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 },
+    input: { width: "100%", padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 16, boxSizing: "border-box" },
+    btn: { background: "#4c1d95", color: "white", border: "none", borderRadius: 10, padding: "14px", fontSize: 16, fontWeight: 700, width: "100%", cursor: "pointer" },
+    btnGhost: { background: "white", color: "#4c1d95", border: "2px solid #4c1d95", borderRadius: 10, padding: "12px", fontSize: 15, fontWeight: 700, width: "100%", cursor: "pointer" },
+    chip: (on) => ({ flex: 1, padding: "10px 0", borderRadius: 8, border: on ? "2px solid #4c1d95" : "1px solid #cbd5e1", background: on ? "#ede9fe" : "white", fontWeight: on ? 700 : 500, fontSize: 15, cursor: "pointer", textAlign: "center" }),
+    tabbar: { position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 480, margin: "0 auto", display: "flex", background: "white", borderTop: "1px solid #e2e8f0" },
+    tab: (on) => ({ flex: 1, padding: "12px 0", textAlign: "center", fontSize: 13, fontWeight: on ? 700 : 500, color: on ? "#4c1d95" : "#94a3b8", borderTop: on ? "3px solid #4c1d95" : "3px solid transparent", cursor: "pointer" }),
+    stepBtn: { width: 40, height: 40, borderRadius: 10, border: "1px solid #cbd5e1", background: "white", fontSize: 20, fontWeight: 700, cursor: "pointer", flexShrink: 0 },
+  };
+
+  const Nav = () => (
+    <div style={S.tabbar}>
+      {[["play", "⛳ Hole"], ["card", "📋 Card"], ["summary", "💰 Money"], ["setup", "🏠 Rounds"]].map(([k, l]) => (
+        <div key={k}
+          style={{ ...S.tab(phase === k), opacity: holes.length === 0 && k !== "setup" ? 0.4 : 1 }}
+          onClick={() => (holes.length > 0 || k === "setup") && setPhase(k)}
+        >{l}</div>
+      ))}
+    </div>
+  );
+
+  const SaveDot = () =>
+    !roundId || holes.length === 0 ? null : (
+      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 10,
+        background: saveState === "error" ? "#fee2e2" : saveState === "saving" ? "#fef3c7" : "#dcfce7",
+        color: saveState === "error" ? "#b91c1c" : saveState === "saving" ? "#b45309" : "#15803d" }}
+        onClick={() => {
+          if (saveState !== "error") return;
+          if (lastError) alert("Save error: " + lastError + "\n\nRetrying now…");
+          saveNow();
+        }}
+      >{saveState === "error" ? "⚠ Save failed — tap" : saveState === "saving" ? "Saving…" : "✓ Saved"}</span>
+    );
+
+  // ---------- SETUP ----------
+  if (phase === "setup") {
+    return (
+      <div style={S.app}>
+        <div style={S.header}>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>🏦 SuperBanker</div>
+          <div style={{ fontSize: 13, opacity: 0.85 }}>{active.length} players</div>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Players & Handicaps (up to 16)</div>
+          {players.map((p, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+              <span style={{ width: 20, fontSize: 12, color: "#94a3b8", fontWeight: 700 }}>{i + 1}</span>
+              <input style={{ ...S.input, flex: 2 }} placeholder={`Player ${i + 1}`} value={p.name}
+                onChange={(e) => { const np = [...players]; np[i] = { ...np[i], name: e.target.value }; setPlayers(np); }} />
+              <input style={{ ...S.input, width: 70, flexShrink: 0 }} type="number" inputMode="numeric" placeholder="Hcp" value={p.hcp}
+                onChange={(e) => { const np = [...players]; np[i] = { ...np[i], hcp: e.target.value }; setPlayers(np); }} />
+              {players.length > 2 && (
+                <button style={{ background: "none", border: "none", color: "#cbd5e1", fontSize: 20, cursor: "pointer", padding: "0 4px" }}
+                  onClick={() => setPlayers(players.filter((_, j) => j !== i))}>×</button>
+              )}
+            </div>
+          ))}
+          {players.length < MAX_PLAYERS && (
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button style={{ ...S.btnGhost, padding: "10px", fontSize: 14 }}
+                onClick={() => setPlayers([...players, { name: "", hcp: "" }])}>+ Add Player</button>
+              <button style={{ ...S.btnGhost, padding: "10px", fontSize: 14 }}
+                onClick={() => setPlayers([...players, ...Array.from({ length: Math.min(4, MAX_PLAYERS - players.length) }, () => ({ name: "", hcp: "" }))])}>+ Add Foursome</button>
+            </div>
+          )}
+          <div style={{ fontSize: 13, color: "#64748b", marginTop: 8 }}>
+            Strokes come off the low man. Everyone plays the same hole; one banker takes on the whole field.
+          </div>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Default Bet (per player, vs the banker)</div>
+          <div style={{ position: "relative", width: 140 }}>
+            <span style={{ position: "absolute", left: 10, top: 11, color: "#64748b" }}>$</span>
+            <input style={{ ...S.input, paddingLeft: 24 }} type="number" inputMode="decimal" placeholder="5"
+              value={defaultBet} onChange={(e) => setDefaultBet(e.target.value)} />
+          </div>
+          {active.length > 1 && betNum > 0 && (
+            <div style={{ fontSize: 13, color: "#64748b", marginTop: 8 }}>
+              Banker is risking up to <b style={{ color: "#4c1d95" }}>{fmt(betNum * (active.length - 1))}</b> a hole against {active.length - 1} players. Bring cash.
+            </div>
+          )}
+        </div>
+
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Course</div>
+          <select style={{ ...S.input, background: "white" }} value={course} onChange={(e) => setCourse(e.target.value)}>
+            {ALL_COURSES.map((c) => (<option key={c} value={c}>{c}</option>))}
+            <option value="__manual__">Manual entry (no preload)</option>
+          </select>
+          {isMultiNine(course) && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ ...S.label, marginBottom: 6 }}>{numHoles === 18 ? "Which nines?" : "Which nine?"}</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <select style={{ ...S.input, background: "white" }} value={nineA} onChange={(e) => setNineA(e.target.value)}>
+                  {NINE_NAMES(course).map((n) => (<option key={n} value={n}>{n}</option>))}
+                </select>
+                {numHoles === 18 && (
+                  <>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>then</span>
+                    <select style={{ ...S.input, background: "white" }} value={nineB} onChange={(e) => setNineB(e.target.value)}>
+                      {NINE_NAMES(course).map((n) => (<option key={n} value={n}>{n}</option>))}
+                    </select>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Holes</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[9, 18].map((n) => (
+              <div key={n} style={S.chip(numHoles === n)} onClick={() => setNumHoles(n)}>{n} holes</div>
+            ))}
+          </div>
+          {numHoles === 9 && COURSES[course] && (
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              {[["front", "Front 9"], ["back", "Back 9"]].map(([k, l]) => (
+                <div key={k} style={S.chip(nine === k)} onClick={() => setNine(k)}>{l}</div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: 12 }}>
+          <button style={{ ...S.btn, opacity: active.length >= 2 ? 1 : 0.5 }} disabled={active.length < 2} onClick={startRound}>
+            Tee Off →
+          </button>
+          {holes.length > 0 && (
+            <button style={{ ...S.btnGhost, marginTop: 8 }} onClick={() => setPhase("play")}>Resume Current Round</button>
+          )}
+        </div>
+
+        {savedRounds.length > 0 && (
+          <div style={S.card}>
+            <div style={{ ...S.label, marginBottom: 8 }}>Saved Rounds</div>
+            {savedRounds.map((e) => (
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid #f1f5f9" }}>
+                <div style={{ flex: 1, cursor: "pointer" }} onClick={() => loadRound(e.id)}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    {e.date} · {e.course !== "__manual__" ? e.course : "Manual"}
+                    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                      background: e.status === "complete" ? "#dcfce7" : "#fef3c7",
+                      color: e.status === "complete" ? "#15803d" : "#b45309" }}>
+                      {e.status === "complete" ? "Complete" : "In progress"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b" }}>
+                    {e.players.length} players · {e.holesScored}/{e.numHoles} holes
+                  </div>
+                </div>
+                <button style={{ background: "none", border: "none", color: "#b91c1c", fontSize: 18, cursor: "pointer", padding: 6 }}
+                  onClick={() => deleteRound(e.id)}>🗑</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <Nav />
+      </div>
+    );
+  }
+
+  const h = holes[cur];
+  const bankerSet = h?.banker != null;
+  const scoresComplete = h && bankerSet && active.every((_, i) => h.gross[i] != null && h.gross[i] > 0);
+  const preview = scoresComplete ? computeHole(h, active, minHcp) : null;
+
+  const updateHole = (patch) => {
+    const nh = [...holes];
+    nh[cur] = { ...nh[cur], ...patch };
+    setHoles(nh);
+  };
+
+  const pickBanker = (i) => {
+    // Choosing the banker also pre-fills bets at the default and everyone at par,
+    // so the scorer only adjusts the exceptions.
+    const bets = [...h.bets];
+    const gross = [...h.gross];
+    active.forEach((_, j) => {
+      if (bets[j] == null) bets[j] = betNum;
+      if (gross[j] == null) gross[j] = h.par;
+    });
+    updateHole({ banker: i, bets, gross });
+  };
+
+  // ---------- PLAY ----------
+  if (phase === "play") {
+    const dblMult = h.par === 3 ? 3 : 2;
+    return (
+      <div style={S.app}>
+        <div style={S.header}>
+          <button style={{ background: "none", border: "none", color: "white", fontSize: 22, cursor: "pointer" }}
+            onClick={() => cur > 0 && setCur(cur - 1)}>‹</button>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontWeight: 800, fontSize: 18 }}>Hole {h.num} · Par {h.par}</div>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>
+              {holes.filter((x) => x.done).length}/{holes.length} scored <SaveDot />
+            </div>
+          </div>
+          <button style={{ background: "none", border: "none", color: "white", fontSize: 22, cursor: "pointer" }}
+            onClick={() => cur < holes.length - 1 && setCur(cur + 1)}>›</button>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={S.label}>Par</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                {[3, 4, 5].map((p) => (
+                  <div key={p} style={S.chip(h.par === p)} onClick={() => updateHole({ par: p })}>{p}</div>
+                ))}
+              </div>
+            </div>
+            <div style={{ width: 100 }}>
+              <div style={S.label}>Hole Hcp</div>
+              <input style={{ ...S.input, marginTop: 6 }} type="number" inputMode="numeric" placeholder="1-18"
+                value={h.holeHcp} onChange={(e) => updateHole({ holeHcp: Number(e.target.value) || "" })} />
+            </div>
+          </div>
+        </div>
+
+        {/* Banker picker */}
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Who's the Banker?</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {active.map((p, i) => (
+              <div key={i}
+                onClick={() => pickBanker(i)}
+                style={{
+                  padding: "8px 10px", borderRadius: 8, fontSize: 14, cursor: "pointer",
+                  border: h.banker === i ? "2px solid #4c1d95" : "1px solid #cbd5e1",
+                  background: h.banker === i ? "#ede9fe" : totals.bankerCount[i] > 0 ? "#f8fafc" : "white",
+                  fontWeight: h.banker === i ? 800 : 500,
+                  color: totals.bankerCount[i] > 0 && h.banker !== i ? "#94a3b8" : "#0f172a",
+                }}>
+                {p.name}
+                {totals.bankerCount[i] > 0 && (
+                  <span style={{ fontSize: 10, marginLeft: 4, color: "#94a3b8" }}>·{totals.bankerCount[i]}</span>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 8 }}>
+            Greyed names have already banked. Picking a banker fills every score at par and every bet at ${betNum} — just fix the exceptions below.
+          </div>
+        </div>
+
+        {bankerSet && (
+          <>
+            {/* Double */}
+            <div style={S.card}>
+              <div onClick={() => updateHole({ doubled: !h.doubled })}
+                style={{
+                  padding: "14px", borderRadius: 10, textAlign: "center", fontWeight: 800, fontSize: 16, cursor: "pointer",
+                  border: h.doubled ? "2px solid #b45309" : "2px dashed #cbd5e1",
+                  background: h.doubled ? "#fef3c7" : "white",
+                  color: h.doubled ? "#b45309" : "#64748b",
+                }}>
+                {h.doubled
+                  ? `⚡ DOUBLED — all bets ×${dblMult}${h.par === 3 ? " (par 3!)" : ""} · tap to undo`
+                  : `⚡ Banker Calls Double (×${dblMult})`}
+              </div>
+              <button style={{ ...S.btnGhost, marginTop: 8, padding: "10px", fontSize: 14 }}
+                onClick={() => setShowBets(!showBets)}>
+                {showBets ? "Hide individual bets" : `Adjust individual bets (all at $${betNum})`}
+              </button>
+              {showBets && (
+                <div style={{ marginTop: 10 }}>
+                  {active.map((p, i) => i === h.banker ? null : (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <div style={{ flex: 1, fontSize: 14 }}>{p.name}</div>
+                      <div style={{ position: "relative", width: 100 }}>
+                        <span style={{ position: "absolute", left: 8, top: 10, color: "#64748b", fontSize: 14 }}>$</span>
+                        <input style={{ ...S.input, paddingLeft: 20, padding: "8px 8px 8px 20px" }} type="number" inputMode="decimal"
+                          value={h.bets[i] ?? ""} placeholder={String(betNum)}
+                          onChange={(e) => {
+                            const bets = [...h.bets];
+                            bets[i] = e.target.value === "" ? null : Number(e.target.value);
+                            updateHole({ bets });
+                          }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Scores */}
+            <div style={S.card}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={S.label}>Gross Scores</div>
+                <button style={{ background: "none", border: "none", color: "#4c1d95", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                  onClick={() => updateHole({ gross: h.gross.map((_, j) => (j < active.length ? h.par : null)) })}>
+                  Reset all to par
+                </button>
+              </div>
+              {active.map((p, i) => {
+                const stroke = strokeFor((Number(p.hcp) || 0) - minHcp, h.holeHcp || 99);
+                const g = h.gross[i];
+                const diff = g == null ? null : g - h.par;
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <div style={{ flex: 1, minWidth: 0, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span style={{ fontWeight: 600 }}>{p.name}</span>
+                      {i === h.banker && <span style={{ marginLeft: 4 }}>🏦</span>}
+                      {stroke === 1 && h.holeHcp !== "" && <span style={{ fontSize: 10, marginLeft: 4, color: "#0369a1" }}>+1</span>}
+                    </div>
+                    <button style={S.stepBtn} onClick={() => {
+                      const gr = [...h.gross]; gr[i] = Math.max(1, (gr[i] ?? h.par) - 1); updateHole({ gross: gr });
+                    }}>−</button>
+                    <div style={{
+                      width: 32, textAlign: "center", fontSize: 19, fontWeight: 800,
+                      color: diff == null ? "#0f172a" : diff < 0 ? "#b91c1c" : diff === 0 ? "#0f172a" : "#64748b",
+                    }}>{g ?? "–"}</div>
+                    <button style={S.stepBtn} onClick={() => {
+                      const gr = [...h.gross]; gr[i] = (gr[i] ?? h.par - 1) + 1; updateHole({ gross: gr });
+                    }}>+</button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Result */}
+        {preview && (
+          <div style={{ ...S.card, background: "#faf5ff", border: "1px solid #ddd6fe" }}>
+            <div style={{ ...S.label, marginBottom: 8 }}>
+              Hole Result — {active[h.banker].name} nets {preview.nets[h.banker]}
+              {h.doubled && <span style={{ marginLeft: 8, color: "#b45309", fontWeight: 800 }}>⚡ ×{dblMult}</span>}
+            </div>
+            <div style={{
+              textAlign: "center", fontSize: 22, fontWeight: 800, padding: "6px 0",
+              color: mColor(preview.money[h.banker]),
+            }}>
+              Banker {preview.money[h.banker] >= 0 ? "collects" : "pays"} {fmt(Math.abs(preview.money[h.banker]))}
+            </div>
+            <div style={{ fontSize: 13, marginTop: 6 }}>
+              {active.map((p, i) => i === h.banker ? null : (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid #f1f5f9" }}>
+                  <span>
+                    {p.name}
+                    <span style={{ color: "#94a3b8" }}> · net {preview.nets[i]}</span>
+                    {preview.mults[i] > 1 && (
+                      <span style={{ color: "#b45309", fontWeight: 700 }}> {preview.mults[i] === 2 ? "🐦" : "🦅"}</span>
+                    )}
+                  </span>
+                  <b style={{ color: mColor(preview.money[i]) }}>
+                    {preview.outcomes[i] === "D" ? "push" : fmt(preview.money[i])}
+                  </b>
+                </div>
+              ))}
+            </div>
+            {!h.done ? (
+              <button style={{ ...S.btn, marginTop: 10 }} onClick={() => {
+                updateHole({ done: true });
+                if (cur < holes.length - 1) setTimeout(() => setCur(cur + 1), 250);
+                else setPhase("summary");
+              }}>
+                Lock Hole {h.num} {cur < holes.length - 1 ? "→ Next" : "→ Money"}
+              </button>
+            ) : (
+              <div style={{ textAlign: "center", marginTop: 8, fontSize: 13, color: "#15803d", fontWeight: 700 }}>
+                ✓ Locked (edits recalc automatically)
+              </div>
+            )}
+          </div>
+        )}
+        <Nav />
+      </div>
+    );
+  }
+
+  // ---------- SCORECARD ----------
+  if (phase === "card") {
+    const cell = { padding: "4px 6px", textAlign: "center", fontSize: 12, whiteSpace: "nowrap" };
+    const front = holes.filter((x) => x.num <= 9);
+    const back = holes.filter((x) => x.num >= 10);
+    const totRow = (rows, label) => (
+      <tr style={{ background: "#faf5ff", fontWeight: 800, borderTop: "2px solid #4c1d95" }}>
+        <td style={{ ...cell, textAlign: "left", position: "sticky", left: 0, background: "#faf5ff" }}>{label}</td>
+        <td style={cell}>{rows.reduce((s, x) => s + x.par, 0) || "–"}</td>
+        {active.map((_, i) => {
+          const played = rows.filter((x) => x.gross[i] != null);
+          const tot = played.reduce((s, x) => s + x.gross[i], 0);
+          return <td key={i} style={cell}>{played.length ? tot : "–"}</td>;
+        })}
+      </tr>
+    );
+    return (
+      <div style={S.app}>
+        <div style={S.header}>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>📋 Scorecard</div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>swipe sideways →</div>
+        </div>
+        <div style={{ ...S.card, padding: 6, overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid #e2e8f0", color: "#64748b" }}>
+                <th style={{ ...cell, textAlign: "left", position: "sticky", left: 0, background: "white" }}>Hole</th>
+                <th style={cell}>Par</th>
+                {active.map((p, i) => (<th key={i} style={cell}>{p.name.slice(0, 5)}</th>))}
+              </tr>
+            </thead>
+            <tbody>
+              {holes.map((hh, hi) => (
+                <tr key={hi} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
+                  onClick={() => { setCur(hi); setPhase("play"); }}>
+                  <td style={{ ...cell, textAlign: "left", fontWeight: 700, position: "sticky", left: 0, background: "white" }}>
+                    {hh.num}{hh.doubled && <span style={{ color: "#b45309" }}>⚡</span>}
+                    {hh.banker != null && <span style={{ fontSize: 9, color: "#94a3b8", marginLeft: 3 }}>{active[hh.banker]?.name.slice(0, 3)}</span>}
+                  </td>
+                  <td style={{ ...cell, color: "#94a3b8" }}>{hh.par}</td>
+                  {active.map((_, i) => {
+                    const g = hh.gross[i];
+                    const d = g == null ? null : g - hh.par;
+                    return (
+                      <td key={i} style={{ ...cell, fontWeight: 600, color: d == null ? "#cbd5e1" : d < 0 ? "#b91c1c" : d === 0 ? "#0f172a" : "#64748b" }}>
+                        {hh.done ? (g ?? "–") : ""}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+              {front.length > 0 && totRow(front.filter((x) => x.done), "OUT")}
+              {back.length > 0 && totRow(back.filter((x) => x.done), "IN")}
+              {totRow(holes.filter((x) => x.done), "TOT")}
+            </tbody>
+          </table>
+        </div>
+        <Nav />
+      </div>
+    );
+  }
+
+  // ---------- SUMMARY ----------
+  const order = active.map((p, i) => ({ ...p, i })).sort((a, b) => totals.money[b.i] - totals.money[a.i]);
+
+  const generateImage = () => {
+    const rowH = 42;
+    const W = 760;
+    const H = 190 + active.length * rowH + 80;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#f1f5f9"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#4c1d95"; ctx.fillRect(0, 0, W, 120);
+    ctx.fillStyle = "white";
+    ctx.font = "800 36px 'Segoe UI', sans-serif";
+    ctx.fillText("🏦 SuperBanker — Money Board", 28, 54);
+    ctx.font = "400 20px 'Segoe UI', sans-serif";
+    ctx.globalAlpha = 0.85;
+    ctx.fillText(`${course !== "__manual__" ? course + " · " : ""}${new Date().toLocaleDateString()} · ${active.length} players · $${betNum} base`, 28, 90);
+    ctx.globalAlpha = 1;
+    let y = 150;
+    ctx.fillStyle = "white";
+    const rr = (x, yy, w, hh, r) => {
+      ctx.beginPath(); ctx.moveTo(x + r, yy);
+      ctx.arcTo(x + w, yy, x + w, yy + hh, r); ctx.arcTo(x + w, yy + hh, x, yy + hh, r);
+      ctx.arcTo(x, yy + hh, x, yy, r); ctx.arcTo(x, yy, x + w, yy, r); ctx.closePath();
+    };
+    rr(20, y, W - 40, active.length * rowH + 20, 14); ctx.fill();
+    y += 14;
+    order.forEach((p, rank) => {
+      const yy = y + rank * rowH;
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "700 22px 'Segoe UI', sans-serif";
+      ctx.fillText(`${rank + 1}. ${rank === 0 && totals.money[p.i] > 0 ? "👑 " : ""}${p.name}`, 44, yy + 26);
+      ctx.font = "400 16px 'Segoe UI', sans-serif";
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillText(`${totals.grossTot[p.i] || "–"} gross · banked ${totals.bankerCount[p.i]}x`, 300, yy + 26);
+      const v = fmt(totals.money[p.i]);
+      ctx.font = "800 24px 'Segoe UI', sans-serif";
+      ctx.fillStyle = totals.money[p.i] > 0 ? "#15803d" : totals.money[p.i] < 0 ? "#b91c1c" : "#64748b";
+      ctx.fillText(v, W - 56 - ctx.measureText(v).width, yy + 28);
+    });
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "400 15px 'Segoe UI', sans-serif";
+    ctx.fillText(`${holes.filter((x) => x.done).length} holes scored · SuperBanker`, 28, H - 26);
+    setExportImg(cv.toDataURL("image/png"));
+  };
+
+  const shareImage = async () => {
+    try {
+      const blob = await (await fetch(exportImg)).blob();
+      const file = new File([blob], `superbanker-${new Date().toISOString().slice(0, 10)}.png`, { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "SuperBanker Results" });
+        return;
+      }
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new window.ClipboardItem({ "image/png": blob })]);
+        alert("Image copied to clipboard — paste it into the group text!");
+        return;
+      }
+      alert("Long-press the image above to save or share it.");
+    } catch (e) {
+      if (e?.name !== "AbortError") alert("Long-press the image above to save or share it.");
+    }
+  };
+
+  const settleUp = () => {
+    // Simple settle-up: pair biggest losers with biggest winners
+    const owe = order.map((p) => ({ name: p.name, v: totals.money[p.i] })).filter((x) => Math.abs(x.v) > 0.001);
+    const winners = owe.filter((x) => x.v > 0).sort((a, b) => b.v - a.v).map((x) => ({ ...x }));
+    const losers = owe.filter((x) => x.v < 0).sort((a, b) => a.v - b.v).map((x) => ({ ...x, v: -x.v }));
+    const lines = [];
+    let wi = 0, li = 0;
+    while (wi < winners.length && li < losers.length) {
+      const amt = Math.min(winners[wi].v, losers[li].v);
+      if (amt > 0.001) lines.push(`${losers[li].name} → ${winners[wi].name}: ${fmt(amt)}`);
+      winners[wi].v -= amt; losers[li].v -= amt;
+      if (winners[wi].v < 0.001) wi++;
+      if (losers[li].v < 0.001) li++;
+    }
+    return lines;
+  };
+
+  return (
+    <div style={S.app}>
+      <div style={S.header}>
+        <div style={{ fontWeight: 800, fontSize: 18 }}>💰 Money Board</div>
+        <div style={{ fontSize: 12, opacity: 0.85, display: "flex", alignItems: "center", gap: 6 }}>
+          {holes.filter((x) => x.done).length}/{holes.length} <SaveDot />
+        </div>
+      </div>
+
+      <div style={S.card}>
+        {order.map((p, rank) => (
+          <div key={p.i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: rank < order.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <span style={{ width: 20, color: "#cbd5e1", fontWeight: 700, fontSize: 13 }}>{rank + 1}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {rank === 0 && totals.money[p.i] > 0 ? "👑 " : ""}{p.name}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>
+                  {totals.grossTot[p.i] || "–"} ({totals.grossTot[p.i] - totals.parTot[p.i] >= 0 ? "+" : ""}{totals.grossTot[p.i] - totals.parTot[p.i]}) · banked {totals.bankerCount[p.i]}x
+                </div>
+              </div>
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 18, color: mColor(totals.money[p.i]) }}>{fmt(totals.money[p.i])}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={S.card}>
+        <div style={{ ...S.label, marginBottom: 8 }}>Settle Up</div>
+        {settleUp().length === 0 ? (
+          <div style={{ fontSize: 14, color: "#64748b" }}>Nothing to settle yet.</div>
+        ) : (
+          settleUp().map((l, i) => (
+            <div key={i} style={{ fontSize: 14, padding: "4px 0", borderBottom: "1px solid #f1f5f9" }}>{l}</div>
+          ))
+        )}
+        <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 8 }}>
+          Fewest possible payments to square everyone up.
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <div style={{ ...S.label, marginBottom: 8 }}>Is it better to be the Banker?</div>
+        <div style={{ fontSize: 14 }}>
+          Banker seat across {totals.bankerHoles} holes:{" "}
+          <b style={{ color: mColor(totals.bankerNetAll) }}>{fmt(totals.bankerNetAll)}</b>
+          {totals.bankerHoles > 0 && (
+            <span style={{ color: "#64748b" }}> ({fmt(totals.bankerNetAll / totals.bankerHoles)}/hole)</span>
+          )}
+        </div>
+      </div>
+
+      <div style={{ padding: 12 }}>
+        <button style={{ ...S.btnGhost, marginBottom: 8 }} onClick={generateImage}>📸 Export Results Image</button>
+        {roundStatus !== "complete" ? (
+          <button style={S.btn} onClick={async () => {
+            setRoundStatus("complete");
+            stateRef.current.roundStatus = "complete";
+            const ok = await saveNow();
+            if (!ok) alert("Save failed — storage may be busy. Tap again in a few seconds.");
+          }}>✅ Finish & Save Round</button>
+        ) : (
+          <div style={{ textAlign: "center", fontWeight: 700, color: "#15803d", padding: "6px 0 10px" }}>
+            ✓ Round complete — saved to your library
+          </div>
+        )}
+        <button style={{ ...S.btnGhost, marginTop: 8 }} onClick={resetAll}>🆕 New Round (this one stays saved)</button>
+      </div>
+
+      {exportImg && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.85)", zIndex: 50, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={() => setExportImg(null)}>
+          <div style={{ color: "white", fontWeight: 700, marginBottom: 10, textAlign: "center" }}>
+            Long-press to save, or use the share button.
+          </div>
+          <img src={exportImg} alt="Results" style={{ maxWidth: "100%", maxHeight: "70vh", borderRadius: 12 }} onClick={(e) => e.stopPropagation()} />
+          <div style={{ display: "flex", gap: 10, marginTop: 12, width: "100%", maxWidth: 400 }}>
+            <button style={{ ...S.btn, flex: 1 }} onClick={(e) => { e.stopPropagation(); shareImage(); }}>📤 Share / Save</button>
+            <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setExportImg(null)}>Close</button>
+          </div>
+        </div>
+      )}
+      <Nav />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<SuperBanker />);
+</script>
+</body>
+</html>

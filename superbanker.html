@@ -175,7 +175,8 @@ function computeHole(hole, players, minHcp, strokeMode) {
   for (let i = 0; i < n; i++) {
     if (i === b || nets[i] == null || bankerNets[i] == null) continue;
     const bet = Number(hole.bets[i]) || 0;
-    const used = Math.max(mults[i], bankerMult) * dbl;
+    const pd = hole.pDoubled && hole.pDoubled[i] ? (hole.par === 3 ? 3 : 2) : 1;
+    const used = Math.max(mults[i], bankerMult) * dbl * pd;
     let m = 0;
     if (nets[i] < bankerNets[i]) { outcomes[i] = "W"; m = bet * used; }
     else if (nets[i] === bankerNets[i]) { outcomes[i] = "D"; }
@@ -252,6 +253,7 @@ function SuperBanker() {
       bets: new Array(MAX_PLAYERS).fill(null),
       gross: new Array(MAX_PLAYERS).fill(null),
       doubled: false,
+      pDoubled: [],
       done: false,
     };
   };
@@ -735,8 +737,25 @@ function SuperBanker() {
                             updateHole({ bets });
                           }} />
                       </div>
+                      <div
+                        onClick={() => {
+                          const pd = [...(h.pDoubled || [])];
+                          pd[i] = !pd[i];
+                          updateHole({ pDoubled: pd });
+                        }}
+                        style={{
+                          width: 44, textAlign: "center", padding: "8px 0", borderRadius: 8,
+                          fontSize: 12, fontWeight: 800, cursor: "pointer", flexShrink: 0,
+                          border: h.pDoubled?.[i] ? "2px solid #b45309" : "1px dashed #cbd5e1",
+                          background: h.pDoubled?.[i] ? "#fef3c7" : "white",
+                          color: h.pDoubled?.[i] ? "#b45309" : "#94a3b8",
+                        }}
+                      >⚡{dblMult}x</div>
                     </div>
                   ))}
+                  <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
+                    Tap ⚡ if a player calls the double themselves. Stacks with the banker's double.
+                  </div>
                 </div>
               )}
             </div>
@@ -804,6 +823,9 @@ function SuperBanker() {
                   <span>
                     {p.name}
                     <span style={{ color: "#94a3b8" }}> · {preview.nets[i]} v {preview.bankerNets[i]}</span>
+                    {h.pDoubled?.[i] && (
+                      <span style={{ color: "#b45309", fontWeight: 700, fontSize: 11 }}> ⚡own</span>
+                    )}
                     {preview.mults[i] > 1 && (
                       <span style={{ color: "#b45309", fontWeight: 700 }}> {preview.mults[i] === 2 ? "🐦" : "🦅"}</span>
                     )}
@@ -895,6 +917,9 @@ function SuperBanker() {
                     return (
                       <td key={i} style={{ ...cell, fontWeight: 600, color: d == null ? "#cbd5e1" : d < 0 ? "#b91c1c" : d === 0 ? "#0f172a" : "#64748b" }}>
                         {hh.done ? (g ?? "–") : ""}
+                        {hh.done && (hh.doubled || hh.pDoubled?.[i]) && (
+                          <span style={{ fontSize: 8, color: "#b45309", verticalAlign: "super" }}>⚡</span>
+                        )}
                       </td>
                     );
                   })}

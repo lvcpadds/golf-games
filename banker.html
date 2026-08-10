@@ -73,39 +73,59 @@ const multFor = (gross, par) => {
   return 1;
 };
 
-function computeHole(hole, players, minHcp) {
-  // hole: {holeHcp, par, banker (index), bets: [], gross: []}
+function computeHole(hole, players, minHcp, strokeMode) {
   const n = players.length;
-  const strokes = players.map((p) => strokeFor((Number(p.hcp) || 0) - minHcp, hole.holeHcp));
-  const nets = hole.gross.map((g, i) => (g == null ? null : g - strokes[i]));
-  const bankerNet = nets[hole.banker];
-  const mults = hole.gross.map((g, i) =>
-    g == null ? 1 : multFor(g, hole.par)
-  );
-  const bankerMult = mults[hole.banker];
+  const hcpOf = (i) => Number(players[i].hcp) || 0;
+  const hh = hole.holeHcp || 99;
+  const b = hole.banker;
+  const mults = hole.gross.map((g) => (g == null ? 1 : multFor(g, hole.par)));
+  const bankerMult = b == null ? 1 : mults[b];
+  const dbl = hole.doubled ? (hole.par === 3 ? 3 : 2) : 1;
   const money = new Array(n).fill(0);
-  const outcomes = new Array(n).fill(null); // W/D/L for non-bankers
+  const outcomes = new Array(n).fill(null);
+  const strokes = new Array(n).fill(0);
+  const bankerStrokes = new Array(n).fill(0);
+  const nets = new Array(n).fill(null);
+  const bankerNets = new Array(n).fill(null);
   let bankerTotal = 0;
+
   for (let i = 0; i < n; i++) {
-    if (i === hole.banker || nets[i] == null || bankerNet == null) continue;
-    const bet = Number(hole.bets[i]) || 0;
-    const dbl = hole.doubled ? (hole.par === 3 ? 3 : 2) : 1;
-    const used = Math.max(mults[i], bankerMult) * dbl;
-    let playerMoney = 0;
-    if (nets[i] < bankerNet) {
-      outcomes[i] = "W";
-      playerMoney = bet * used;
-    } else if (nets[i] === bankerNet) {
-      outcomes[i] = "D";
+    if (hole.gross[i] == null) continue;
+    if (strokeMode === "banker" && b != null) {
+      // Roll off the banker: only the differential between the two matters
+      const d = hcpOf(i) - hcpOf(b);
+      if (d >= 0) { strokes[i] = strokeFor(d, hh); bankerStrokes[i] = 0; }
+      else { strokes[i] = 0; bankerStrokes[i] = strokeFor(-d, hh); }
+    } else if (strokeMode === "full") {
+      // Strokes fall where they land: everyone plays their full handicap,
+      // so a 4 pops on the 4 hardest holes and an 18 pops everywhere.
+      strokes[i] = strokeFor(hcpOf(i), hh);
+      bankerStrokes[i] = b == null ? 0 : strokeFor(hcpOf(b), hh);
     } else {
-      outcomes[i] = "L";
-      playerMoney = -bet * used;
+      // Off the low man: everyone's strokes are fixed for the round
+      strokes[i] = strokeFor(hcpOf(i) - minHcp, hh);
+      bankerStrokes[i] = b == null ? 0 : strokeFor(hcpOf(b) - minHcp, hh);
     }
-    money[i] = playerMoney;
-    bankerTotal -= playerMoney;
+    nets[i] = hole.gross[i] - strokes[i];
+    if (b != null && hole.gross[b] != null) bankerNets[i] = hole.gross[b] - bankerStrokes[i];
   }
-  money[hole.banker] = bankerTotal;
-  return { strokes, nets, mults, money, outcomes, bankerNet };
+
+  for (let i = 0; i < n; i++) {
+    if (i === b || nets[i] == null || bankerNets[i] == null) continue;
+    const bet = Number(hole.bets[i]) || 0;
+    const used = Math.max(mults[i], bankerMult) * dbl;
+    let m = 0;
+    if (nets[i] < bankerNets[i]) { outcomes[i] = "W"; m = bet * used; }
+    else if (nets[i] === bankerNets[i]) { outcomes[i] = "D"; }
+    else { outcomes[i] = "L"; m = -bet * used; }
+    money[i] = m;
+    bankerTotal -= m;
+  }
+  if (b != null) money[b] = bankerTotal;
+  const bankerNet = b != null && hole.gross[b] != null
+    ? hole.gross[b] - (strokeMode === "banker" ? 0 : strokeMode === "full" ? strokeFor(hcpOf(b), hh) : strokeFor(hcpOf(b) - minHcp, hh))
+    : null;
+  return { strokes, bankerStrokes, nets, bankerNets, mults, money, outcomes, dbl, bankerNet };
 }
 
 // ---------- Course library (par, men's handicap) ----------
@@ -195,6 +215,20 @@ const emptyHole = (num) => ({
   done: false,
 });
 
+
+// Who takes the bank next? Low GROSS wins the hole. Ties (including the banker)
+// go to longest putt, which the app can't know -- so it asks.
+function holeWinner(hole, nPlayers) {
+  const scores = [];
+  for (let i = 0; i < nPlayers; i++) {
+    if (hole.gross[i] != null && hole.gross[i] > 0) scores.push({ i, g: hole.gross[i] });
+  }
+  if (!scores.length) return { winner: null, tied: [] };
+  const best = Math.min(...scores.map((s) => s.g));
+  const tied = scores.filter((s) => s.g === best).map((s) => s.i);
+  return { winner: tied.length === 1 ? tied[0] : null, tied, best };
+}
+
 const INDEX_KEY = "banker-rounds-index";
 const roundKey = (id) => `banker-round:${id}`;
 
@@ -208,6 +242,7 @@ function BankerScorer() {
   ]);
   const [numHoles, setNumHoles] = useState(18);
   const [course, setCourse] = useState("Flying Horse Club");
+  const [strokeMode, setStrokeMode] = useState("low"); // low | banker
   const [nineA, setNineA] = useState("Beaver");
   const [nineB, setNineB] = useState("Bear");
   const [nine, setNine] = useState("front"); // front | back (for 9-hole rounds)
@@ -219,6 +254,7 @@ function BankerScorer() {
   const [savedRounds, setSavedRounds] = useState([]);
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
   const [lastError, setLastError] = useState(null);
+  const [tieBreak, setTieBreak] = useState(null);
   const [diag, setDiag] = useState(null);
   const stateRef = useRef({});
   const saveTimer = useRef(null);
@@ -244,6 +280,7 @@ function BankerScorer() {
       setPlayers(s.players);
       setNumHoles(s.numHoles);
       setCourse(s.course ?? "__manual__");
+      if (s.strokeMode) setStrokeMode(s.strokeMode);
       if (s.nineA) setNineA(s.nineA);
       if (s.nineB) setNineB(s.nineB);
       setHoles(s.holes);
@@ -305,7 +342,7 @@ function BankerScorer() {
         roundKey(st.roundId),
         JSON.stringify({
           players: st.players, numHoles: st.numHoles, course: st.course,
-          nineA: st.nineA, nineB: st.nineB,
+          nineA: st.nineA, nineB: st.nineB, strokeMode: st.strokeMode,
           holes: st.holes, cur: st.cur, phase: st.phase, status: st.roundStatus,
         })
       );
@@ -406,7 +443,7 @@ function BankerScorer() {
   const results = useMemo(
     () =>
       holes.map((h) =>
-        h.done ? computeHole(h, active, minHcp) : null
+        h.done ? computeHole(h, active, minHcp, strokeMode) : null
       ),
     [holes, active, minHcp]
   );
@@ -661,6 +698,30 @@ function BankerScorer() {
           </div>
         </div>
         <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Strokes Roll Off</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <div style={S.chip(strokeMode === "low")} onClick={() => setStrokeMode("low")}>
+              <div style={{ fontSize: 13 }}>Low Man</div>
+              <div style={{ fontSize: 9, color: "#64748b", fontWeight: 500 }}>fixed all round</div>
+            </div>
+            <div style={S.chip(strokeMode === "full")} onClick={() => setStrokeMode("full")}>
+              <div style={{ fontSize: 13 }}>Where They Land</div>
+              <div style={{ fontSize: 9, color: "#64748b", fontWeight: 500 }}>full handicap</div>
+            </div>
+            <div style={S.chip(strokeMode === "banker")} onClick={() => setStrokeMode("banker")}>
+              <div style={{ fontSize: 13 }}>The Banker</div>
+              <div style={{ fontSize: 9, color: "#64748b", fontWeight: 500 }}>match-play</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: "#64748b", marginTop: 8, lineHeight: 1.5 }}>
+            {strokeMode === "low"
+              ? "Strokes set off the lowest handicap and fixed all round. The low man gets none; everyone else's pops land in the middle of the card."
+              : strokeMode === "full"
+              ? "Everyone plays their full handicap \u2014 a 4 pops on the 4 hardest holes, an 18 pops on all 18. Fixed all round, and nobody plays a hole with zero strokes."
+              : "Each bet is scored off the gap between that player and the banker, so the banker can give a stroke and get one on the same hole. Same stroke totals as Low Man, but they land on the hardest holes."}
+          </div>
+        </div>
+        <div style={S.card}>
           <div style={{ ...S.label, marginBottom: 8 }}>Course</div>
           <select
             style={{ ...S.input, background: "white" }}
@@ -783,12 +844,31 @@ function BankerScorer() {
     h && bankerSet && active.every((_, i) => h.gross[i] != null && h.gross[i] > 0);
   const betsComplete =
     h && bankerSet && active.every((_, i) => i === h.banker || h.bets[i] != null);
-  const preview = scoresComplete ? computeHole(h, active, minHcp) : null;
+  const preview = scoresComplete ? computeHole(h, active, minHcp, strokeMode) : null;
 
   const updateHole = (patch) => {
     const nh = [...holes];
     nh[cur] = { ...nh[cur], ...patch };
     setHoles(nh);
+  };
+
+  const lockHole = (forcedWinner) => {
+    const nh = [...holes];
+    nh[cur] = { ...nh[cur], done: true };
+    const { winner, tied } = holeWinner(nh[cur], active.length);
+    const next = forcedWinner != null ? forcedWinner : winner;
+    if (next == null && tied.length > 1) {
+      setHoles(nh);
+      setTieBreak(tied);
+      return;
+    }
+    if (cur < holes.length - 1 && next != null && nh[cur + 1].banker == null) {
+      nh[cur + 1] = { ...nh[cur + 1], banker: next };
+    }
+    setHoles(nh);
+    setTieBreak(null);
+    if (cur < holes.length - 1) setTimeout(() => setCur(cur + 1), 250);
+    else setPhase("summary");
   };
 
   // ---------- PLAY (hole sequence) ----------
@@ -846,6 +926,9 @@ function BankerScorer() {
         {/* Step 2: banker */}
         <div style={S.card}>
           <div style={{ ...S.label, marginBottom: 6 }}>Who's the Banker?</div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6 }}>
+            Carries over until someone wins a hole (low gross) or takes it on longest putt.
+          </div>
           <div style={{ display: "flex", gap: 6 }}>
             {active.map((p, i) => (
               <div key={i} style={S.chip(h.banker === i)} onClick={() => updateHole({ banker: i })}>
@@ -920,7 +1003,13 @@ function BankerScorer() {
           <div style={S.card}>
             <div style={{ ...S.label, marginBottom: 6 }}>Gross Scores</div>
             {active.map((p, i) => {
-              const stroke = strokeFor((Number(p.hcp) || 0) - minHcp, h.holeHcp || 99);
+              const hb = h.banker;
+              const dB = hb == null ? 0 : (Number(p.hcp) || 0) - (Number(active[hb].hcp) || 0);
+              const stroke = strokeMode === "banker" && hb != null
+                ? (dB >= 0 ? strokeFor(dB, h.holeHcp || 99) : 0)
+                : strokeFor((Number(p.hcp) || 0) - minHcp, h.holeHcp || 99);
+              const givesStroke = strokeMode === "banker" && hb != null && dB < 0
+                ? strokeFor(-dB, h.holeHcp || 99) : 0;
               return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                   <div style={{ flex: 1 }}>
@@ -928,6 +1017,9 @@ function BankerScorer() {
                     {i === h.banker && <span style={{ fontSize: 11, marginLeft: 6, color: "#14532d" }}>🏦</span>}
                     {stroke === 1 && h.holeHcp !== "" && (
                       <span style={{ fontSize: 11, marginLeft: 6, color: "#0369a1" }}>gets a stroke</span>
+                    )}
+                    {givesStroke === 1 && h.holeHcp !== "" && (
+                      <span style={{ fontSize: 11, marginLeft: 6, color: "#b45309" }}>gives banker a stroke</span>
                     )}
                   </div>
                   <div style={S.stepper}>
@@ -965,7 +1057,7 @@ function BankerScorer() {
         {preview && betsComplete && (
           <div style={{ ...S.card, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
             <div style={{ ...S.label, marginBottom: 8 }}>
-              Hole Result — {active[h.banker].name} nets {preview.nets[h.banker]}
+              Hole Result — {active[h.banker].name} {strokeMode === "banker" ? "banks" : `nets ${preview.nets[h.banker]}`}
               {h.doubled && (
                 <span style={{ marginLeft: 8, color: "#b45309", fontWeight: 800 }}>
                   ⚡ ×{h.par === 3 ? 3 : 2}
@@ -981,6 +1073,11 @@ function BankerScorer() {
                     : preview.outcomes[i]
                     ? ` — ${{ W: "Wins", D: "Push", L: "Loses" }[preview.outcomes[i]]}`
                     : ""}
+                  {i !== h.banker && preview.nets[i] != null && (
+                    <span style={{ fontSize: 11, color: "#94a3b8" }}>
+                      {" "}({preview.nets[i]} v {preview.bankerNets[i]})
+                    </span>
+                  )}
                   {preview.mults[i] > 1 && (
                     <span style={{ color: "#b45309", fontWeight: 700 }}>
                       {" "}
@@ -992,11 +1089,7 @@ function BankerScorer() {
               </div>
             ))}
             {!h.done ? (
-              <button style={{ ...S.btn, marginTop: 10 }} onClick={() => {
-                updateHole({ done: true });
-                if (cur < holes.length - 1) setTimeout(() => setCur(cur + 1), 250);
-                else setPhase("summary");
-              }}>
+              <button style={{ ...S.btn, marginTop: 10 }} onClick={() => lockHole()}>
                 Lock Hole {h.num} {cur < holes.length - 1 ? "→ Next" : "→ Summary"}
               </button>
             ) : (
@@ -1004,6 +1097,25 @@ function BankerScorer() {
                 ✓ Locked (edits recalc automatically)
               </div>
             )}
+          </div>
+        )}
+        {tieBreak && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.85)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <div style={{ background: "white", borderRadius: 16, padding: 20, maxWidth: 380, width: "100%" }}>
+              <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 4 }}>⛳ Tie for the hole</div>
+              <div style={{ fontSize: 14, color: "#64748b", marginBottom: 14 }}>
+                Longest putt takes the bank. Who made it?
+              </div>
+              {tieBreak.map((i) => (
+                <button key={i} style={{ ...S.btnGhost, marginBottom: 8 }} onClick={() => lockHole(i)}>
+                  {active[i].name}
+                </button>
+              ))}
+              <button style={{ ...S.btnGhost, borderColor: "#cbd5e1", color: "#64748b", marginTop: 4 }}
+                onClick={() => { setTieBreak(null); if (cur < holes.length - 1) setCur(cur + 1); else setPhase("summary"); }}>
+                Skip — I'll set it manually
+              </button>
+            </div>
           </div>
         )}
         <Nav />

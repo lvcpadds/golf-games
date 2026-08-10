@@ -1189,8 +1189,10 @@ function BankerScorer() {
                     {active.map((_, i) => (
                       <td key={i} style={{ padding: 6, textAlign: "center" }}>
                         {hh.gross[i] ?? "–"}
-                        {(hh.doubled || hh.pDoubled?.[i]) && (
-                          <span style={{ fontSize: 9, color: "#b45309", verticalAlign: "super" }}>⚡</span>
+                        {hh.banker !== i && (hh.doubled || hh.pDoubled?.[i]) && (
+                          <span style={{ fontSize: 9, color: "#b45309", verticalAlign: "super" }}>
+                            {"⚡".repeat((hh.doubled ? 1 : 0) + (hh.pDoubled?.[i] ? 1 : 0))}
+                          </span>
                         )}
                         {r && (
                           <div style={{ fontSize: 10, fontWeight: 700, color: moneyColor(r.money[i]) }}>

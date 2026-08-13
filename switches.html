@@ -225,6 +225,7 @@ function SwitchesScorer() {
   const [curGame, setCurGame] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [exportImg, setExportImg] = useState(null);
+  const [holeIdx, setHoleIdx] = useState(null); // null = follow the last hole
   const [roundId, setRoundId] = useState(null);
   const [roundStatus, setRoundStatus] = useState("in-progress"); // in-progress | complete
   const [savedRounds, setSavedRounds] = useState([]); // index entries
@@ -386,15 +387,18 @@ function SwitchesScorer() {
     return m;
   }, [games, gameResults, bet]);
 
+  // Next hole = one past the highest hole that actually has a score entered.
+  // Reading real hole numbers keeps this correct after a game is deleted or
+  // a game's start hole is changed by hand.
   const nextHoleNum = useMemo(() => {
-    let n = startHole;
-    games.forEach((g, gi) => {
-      const r = gameResults[gi];
-      const played = r ? r.holeResults.filter(Boolean).length : 0;
-      n += played;
+    let highest = startHole - 1;
+    games.forEach((g) => {
+      g.holes.forEach((hh) => {
+        if (hh.gross.some((x) => x != null) && hh.num > highest) highest = hh.num;
+      });
     });
-    return n;
-  }, [games, gameResults, startHole]);
+    return highest + 1;
+  }, [games, startHole]);
 
   const roundOver = nextHoleNum > 18;
 
@@ -412,6 +416,7 @@ function SwitchesScorer() {
     };
     setGames([...games, g]);
     setCurGame(games.length);
+    setHoleIdx(null);
     setPhase("play");
   };
 
@@ -549,6 +554,37 @@ function SwitchesScorer() {
   };
 
   const seatLabels = ["Cart 1 · Driver", "Cart 1 · Passenger", "Cart 2 · Driver", "Cart 2 · Passenger"];
+
+  const deleteGame = (gi) => {
+    const scored = games[gi].holes.some((hh) => hh.gross.some((x) => x != null));
+    const msg = scored
+      ? `Delete Game ${gi + 1}? It has scores entered and this can't be undone.`
+      : `Delete Game ${gi + 1}?`;
+    if (!window.confirm(msg)) return;
+    const ng = games.filter((_, j) => j !== gi);
+    setGames(ng);
+    if (ng.length === 0) {
+      setCurGame(0);
+      setPhase("setup");
+    } else {
+      setCurGame(Math.min(curGame, ng.length - 1));
+      if (phase === "play") setPhase("games");
+    }
+  };
+
+  const setGameStartHole = (gi, newStart) => {
+    const ng = JSON.parse(JSON.stringify(games));
+    const g0 = ng[gi];
+    const shift = newStart - g0.holes[0].num;
+    if (shift === 0) return;
+    g0.holes = g0.holes.map((hh, k) => {
+      const num = newStart + k;
+      if (num > 18) return null;
+      const c = layout?.[num - 1];
+      return { ...hh, num, par: c?.par ?? hh.par, holeHcp: c?.hcp ?? hh.holeHcp };
+    }).filter(Boolean);
+    setGames(ng);
+  };
 
   const Nav = () => (
     <div style={S.tabbar}>
@@ -700,7 +736,7 @@ function SwitchesScorer() {
   const g = games[curGame];
   const r = gameResults[curGame];
   const [tA, tB] = g.teams;
-  const curHoleIdx = g.holes.length - 1;
+  const curHoleIdx = holeIdx == null ? g.holes.length - 1 : Math.min(holeIdx, g.holes.length - 1);
   const h = g.holes[curHoleIdx];
   const holeComplete = h.gross.every((x) => x != null && x > 0) && h.holeHcp !== "";
   const holeRes = r.holeResults[curHoleIdx];
@@ -713,11 +749,13 @@ function SwitchesScorer() {
   const advanceHole = () => {
     if (h.num >= 18) return;
     const ng = JSON.parse(JSON.stringify(games));
+    // If we're viewing an earlier hole, just move forward instead of adding one
+    if (curHoleIdx < g.holes.length - 1) { setHoleIdx(curHoleIdx + 1); return; }
     ng[curGame].holes.push(newHole(h.num + 1, layout));
     setGames(ng);
+    setHoleIdx(null);
   };
   const cyclePairing = () => {
-    if (g.holes.some((hh) => hh.gross.some((x) => x != null))) return; // locked once scoring starts
     const ng = JSON.parse(JSON.stringify(games));
     const ni = (g.pairingIdx + 1) % 3;
     ng[curGame].pairingIdx = ni;
@@ -749,26 +787,85 @@ function SwitchesScorer() {
     return (
       <div style={S.app}>
         <div style={S.header}>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>Hole {h.num}</div>
-          <div style={{ fontSize: 13, opacity: 0.8, display: "flex", alignItems: "center", gap: 6 }}>
-            Game {curGame + 1} · Hole {r.holeResults.filter(Boolean).length + (holeComplete ? 0 : 1)} of ≤6 <SaveDot />
+          <button
+            style={{ background: "none", border: "none", color: "white", fontSize: 24, cursor: "pointer", opacity: curHoleIdx > 0 ? 1 : 0.3, padding: "0 6px" }}
+            onClick={() => curHoleIdx > 0 && setHoleIdx(curHoleIdx - 1)}
+          >‹</button>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontWeight: 800, fontSize: 18 }}>Hole {h.num}</div>
+            <div style={{ fontSize: 12, opacity: 0.8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              Game {curGame + 1} · {curHoleIdx + 1} of {g.holes.length} <SaveDot />
+            </div>
           </div>
+          <button
+            style={{ background: "none", border: "none", color: "white", fontSize: 24, cursor: "pointer", opacity: curHoleIdx < g.holes.length - 1 ? 1 : 0.3, padding: "0 6px" }}
+            onClick={() => curHoleIdx < g.holes.length - 1 && setHoleIdx(curHoleIdx + 1)}
+          >›</button>
         </div>
+
+        {/* Game switcher */}
+        {games.length > 1 && (
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "10px 12px 0" }}>
+            {games.map((_, gi) => (
+              <div key={gi}
+                onClick={() => { setCurGame(gi); setHoleIdx(null); }}
+                style={{
+                  padding: "6px 12px", borderRadius: 20, fontSize: 13, whiteSpace: "nowrap", cursor: "pointer",
+                  border: gi === curGame ? "2px solid #1e3a8a" : "1px solid #cbd5e1",
+                  background: gi === curGame ? "#dbeafe" : "white",
+                  fontWeight: gi === curGame ? 700 : 500,
+                  color: gi === curGame ? "#1e3a8a" : "#64748b",
+                }}>
+                Game {gi + 1}
+              </div>
+            ))}
+          </div>
+        )}
         <MatchBanner />
 
-        {/* Teams (editable before scoring starts) */}
+        {/* Teams */}
         <div style={{ ...S.card, padding: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontSize: 14 }}>
               <b>{teamName(tA)}</b> <span style={{ color: "#94a3b8" }}>vs</span> <b>{teamName(tB)}</b>
             </div>
-            {!g.holes.some((hh) => hh.gross.some((x) => x != null)) && (
-              <button style={{ ...S.btnGhost, width: "auto", padding: "6px 10px", fontSize: 12 }} onClick={cyclePairing}>
-                ↻ rotate
-              </button>
-            )}
+            <button style={{ ...S.btnGhost, width: "auto", padding: "6px 10px", fontSize: 12 }} onClick={cyclePairing}>
+              ↻ rotate
+            </button>
           </div>
+          {true && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
+              <span style={{ fontSize: 13, color: "#64748b", flex: 1 }}>Start this game on hole</span>
+              <button style={{ ...S.stepBtn, width: 36, height: 36, fontSize: 18 }}
+                onClick={() => setGameStartHole(curGame, Math.max(1, g.holes[0].num - 1))}>−</button>
+              <div style={{ width: 30, textAlign: "center", fontSize: 17, fontWeight: 800 }}>{g.holes[0].num}</div>
+              <button style={{ ...S.stepBtn, width: 36, height: 36, fontSize: 18 }}
+                onClick={() => setGameStartHole(curGame, Math.min(18, g.holes[0].num + 1))}>+</button>
+              <button style={{ background: "none", border: "none", color: "#b91c1c", fontSize: 17, cursor: "pointer", padding: "2px 4px" }}
+                onClick={() => deleteGame(curGame)}>🗑</button>
+            </div>
+          )}
         </div>
+
+        {g.holes.length > 1 && (
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "10px 12px 0" }}>
+            {g.holes.map((hh, k) => {
+              const scored = hh.gross.some((x) => x != null);
+              return (
+                <div key={k} onClick={() => setHoleIdx(k)}
+                  style={{
+                    minWidth: 38, textAlign: "center", padding: "6px 0", borderRadius: 8, fontSize: 13, cursor: "pointer",
+                    border: k === curHoleIdx ? "2px solid #1e3a8a" : "1px solid #e2e8f0",
+                    background: k === curHoleIdx ? "#dbeafe" : scored ? "#f8fafc" : "white",
+                    fontWeight: k === curHoleIdx ? 800 : 500,
+                    color: k === curHoleIdx ? "#1e3a8a" : scored ? "#0f172a" : "#94a3b8",
+                  }}>
+                  {hh.num}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Hole info */}
         <div style={S.card}>
@@ -827,7 +924,11 @@ function SwitchesScorer() {
             <div style={{ fontSize: 15, fontWeight: 700, textAlign: "center", margin: "6px 0" }}>
               Hole: {holeRes.hA} — {holeRes.hB}
             </div>
-            {r.ended ? (
+            {curHoleIdx < g.holes.length - 1 ? (
+              <button style={{ ...S.btn, marginTop: 6 }} onClick={() => setHoleIdx(curHoleIdx + 1)}>
+                Next Hole ({g.holes[curHoleIdx + 1].num}) →
+              </button>
+            ) : r.ended ? (
               <div>
                 <div style={{ textAlign: "center", fontWeight: 800, fontSize: 16, margin: "6px 0" }}>
                   {r.winner === 0 ? "🤝 Game halved — no money moves"
@@ -957,14 +1058,25 @@ function SwitchesScorer() {
           const rr = gameResults[gi];
           const [a, b] = gg.teams;
           return (
-            <div key={gi} style={{ ...S.card, cursor: "pointer" }} onClick={() => { setCurGame(gi); setPhase("play"); }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <b>Game {gi + 1} · {PAIRINGS[gg.pairingIdx].label}</b>
-                <span style={{ fontSize: 13, color: "#64748b" }}>
-                  {rr.ended ? (rr.winner === 0 ? "Halved" : "Final") : "In progress"}
-                </span>
+            <div key={gi} style={{ ...S.card }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <b style={{ cursor: "pointer" }} onClick={() => { setCurGame(gi); setHoleIdx(null); setPhase("play"); }}>
+                  Game {gi + 1} · {PAIRINGS[gg.pairingIdx].label}
+                </b>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 13, color: "#64748b" }}>
+                    {rr.ended ? (rr.winner === 0 ? "Halved" : "Final") : "In progress"}
+                  </span>
+                  <button
+                    style={{ background: "none", border: "none", color: "#b91c1c", fontSize: 17, cursor: "pointer", padding: "2px 4px" }}
+                    onClick={(e) => { e.stopPropagation(); deleteGame(gi); }}
+                  >🗑</button>
+                </div>
               </div>
-              <div style={{ fontSize: 14, marginTop: 4 }}>
+              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>
+                Holes {gg.holes[0]?.num}{gg.holes.length > 1 ? `–${gg.holes[gg.holes.length - 1].num}` : ""}
+              </div>
+              <div style={{ fontSize: 14, marginTop: 4, cursor: "pointer" }} onClick={() => { setCurGame(gi); setHoleIdx(null); setPhase("play"); }}>
                 {teamName(a)} <b>{rr.ptsA}</b> — <b>{rr.ptsB}</b> {teamName(b)}
               </div>
               <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>

@@ -87,6 +87,22 @@ const COURSES = {
     { par: 5, hcp: 6 }, { par: 4, hcp: 2 }, { par: 4, hcp: 12 },
     { par: 3, hcp: 18 }, { par: 4, hcp: 8 }, { par: 4, hcp: 4 },
   ],
+  "Hiwan GC": [
+    { par: 4, hcp: 3 }, { par: 5, hcp: 13 }, { par: 3, hcp: 9 },
+    { par: 4, hcp: 7 }, { par: 4, hcp: 15 }, { par: 4, hcp: 11 },
+    { par: 4, hcp: 1 }, { par: 3, hcp: 17 }, { par: 4, hcp: 5 },
+    { par: 4, hcp: 10 }, { par: 4, hcp: 2 }, { par: 3, hcp: 18 },
+    { par: 4, hcp: 12 }, { par: 4, hcp: 16 }, { par: 5, hcp: 14 },
+    { par: 3, hcp: 8 }, { par: 4, hcp: 4 }, { par: 4, hcp: 6 },
+  ],
+  "Fossil Trace": [
+    { par: 5, hcp: 3 }, { par: 4, hcp: 13 }, { par: 3, hcp: 15 },
+    { par: 4, hcp: 5 }, { par: 3, hcp: 17 }, { par: 4, hcp: 9 },
+    { par: 4, hcp: 11 }, { par: 4, hcp: 7 }, { par: 5, hcp: 1 },
+    { par: 4, hcp: 10 }, { par: 3, hcp: 16 }, { par: 5, hcp: 4 },
+    { par: 4, hcp: 8 }, { par: 3, hcp: 14 }, { par: 5, hcp: 2 },
+    { par: 3, hcp: 18 }, { par: 4, hcp: 12 }, { par: 5, hcp: 6 },
+  ],
 };
 
 const NINE_COURSES = {
@@ -208,6 +224,24 @@ function holeWinner(hole, nPlayers) {
 const INDEX_KEY = "superbanker-rounds-index";
 const roundKey = (id) => `superbanker-round:${id}`;
 const MAX_PLAYERS = 16;
+
+
+// ---------- Shareable standings snapshot ----------
+// Packs a compact leaderboard into the URL hash so anyone can view it with no
+// account, no install, and no backend. Snapshot only -- scorer re-shares.
+const packSnapshot = (payload) => {
+  const json = JSON.stringify(payload);
+  // UTF-8 safe base64
+  const b64 = btoa(unescape(encodeURIComponent(json)));
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+const unpackSnapshot = (str) => {
+  try {
+    let b = str.replace(/-/g, "+").replace(/_/g, "/");
+    while (b.length % 4) b += "=";
+    return JSON.parse(decodeURIComponent(escape(atob(b))));
+  } catch (e) { return null; }
+};
 
 function SuperBanker() {
   const [phase, setPhase] = useState("setup"); // setup | play | card | summary
@@ -845,6 +879,11 @@ function SuperBanker() {
                 ✓ Locked (edits recalc automatically)
               </div>
             )}
+            {holes.filter((x) => x.done).length > 0 && (
+              <button style={{ ...S.btnGhost, marginTop: 8, padding: "10px", fontSize: 14 }} onClick={shareStandings}>
+                🔗 Share Standings to the Group
+              </button>
+            )}
           </div>
         )}
         {tieBreak && (
@@ -985,6 +1024,44 @@ function SuperBanker() {
     setExportImg(cv.toDataURL("image/png"));
   };
 
+  const buildShareUrl = () => {
+    const payload = {
+      c: course,
+      h: holes.filter((x) => x.done).length,
+      d: new Date().toLocaleDateString(),
+      p: active.map((p, i) => ({
+        n: p.name,
+        m: Math.round(totals.money[i] * 100) / 100,
+        g: totals.grossTot[i] || 0,
+        b: totals.bankerCount[i] || 0,
+      })),
+      s: settleUp(),
+    };
+    const base = window.location.origin + window.location.pathname;
+    return base + "#v=" + packSnapshot(payload);
+  };
+
+  const shareStandings = async () => {
+    const url = buildShareUrl();
+    const text = `SuperBanker standings after ${holes.filter((x) => x.done).length} holes`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "SuperBanker Standings", text, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      alert("Link copied — paste it into the group text!");
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      try {
+        await navigator.clipboard.writeText(url);
+        alert("Link copied — paste it into the group text!");
+      } catch (e2) {
+        window.prompt("Copy this link:", url);
+      }
+    }
+  };
+
   const shareImage = async () => {
     try {
       const blob = await (await fetch(exportImg)).blob();
@@ -1075,6 +1152,7 @@ function SuperBanker() {
       </div>
 
       <div style={{ padding: 12 }}>
+        <button style={{ ...S.btn, marginBottom: 8 }} onClick={shareStandings}>🔗 Share Live Standings</button>
         <button style={{ ...S.btnGhost, marginBottom: 8 }} onClick={generateImage}>📸 Export Results Image</button>
         {roundStatus !== "complete" ? (
           <button style={S.btn} onClick={async () => {
@@ -1109,7 +1187,78 @@ function SuperBanker() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<SuperBanker />);
+
+// ---------- Read-only standings viewer ----------
+function StandingsView({ data }) {
+  const fmt = (v) => (v < 0 ? `-$${Math.abs(v).toFixed(v % 1 ? 2 : 0)}` : `$${v.toFixed(v % 1 ? 2 : 0)}`);
+  const mColor = (v) => (v > 0 ? "#15803d" : v < 0 ? "#b91c1c" : "#64748b");
+  const S = {
+    app: { maxWidth: 480, margin: "0 auto", fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f1f5f9", minHeight: "100vh", paddingBottom: 40 },
+    header: { background: "#4c1d95", color: "white", padding: "16px" },
+    card: { background: "white", borderRadius: 12, padding: 16, margin: "12px 12px 0", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" },
+    label: { fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 },
+  };
+  const rows = [...data.p].sort((a, b) => b.m - a.m);
+  return (
+    <div style={S.app}>
+      <div style={S.header}>
+        <div style={{ fontWeight: 800, fontSize: 20 }}>🏦 SuperBanker</div>
+        <div style={{ fontSize: 13, opacity: 0.85, marginTop: 3 }}>
+          {data.c && data.c !== "__manual__" ? data.c + " · " : ""}{data.h} holes scored{data.d ? " · " + data.d : ""}
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <div style={{ ...S.label, marginBottom: 8 }}>Standings</div>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: i < rows.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <span style={{ width: 18, color: "#cbd5e1", fontWeight: 700, fontSize: 13 }}>{i + 1}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 16, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {i === 0 && r.m > 0 ? "👑 " : ""}{r.n}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>
+                  {r.g ? `${r.g} gross` : "—"}{r.b ? ` · banked ${r.b}x` : ""}
+                </div>
+              </div>
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 19, color: mColor(r.m) }}>{fmt(r.m)}</div>
+          </div>
+        ))}
+      </div>
+
+      {data.s && data.s.length > 0 && (
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Settle Up</div>
+          {data.s.map((l, i) => (
+            <div key={i} style={{ fontSize: 14, padding: "4px 0", borderBottom: i < data.s.length - 1 ? "1px solid #f1f5f9" : "none" }}>{l}</div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", padding: "18px 20px 8px", lineHeight: 1.6 }}>
+        Snapshot as of {data.h} holes. The scorer re-shares to update.
+        <div style={{ marginTop: 10 }}>
+          <a href={window.location.pathname} style={{ color: "#4c1d95", fontWeight: 700, textDecoration: "none" }}>
+            Start your own round →
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Root() {
+  const hash = window.location.hash || "";
+  if (hash.startsWith("#v=")) {
+    const data = unpackSnapshot(hash.slice(3));
+    if (data && data.p) return <StandingsView data={data} />;
+  }
+  return <SuperBanker />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
 </script>
 </body>
 </html>

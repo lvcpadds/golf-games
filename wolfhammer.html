@@ -749,6 +749,25 @@ function WolfHammer() {
               ⚠ No hole handicap set — nobody gets a pop on this hole.
             </div>
           )}
+          {scoreBy === "net" && h.holeHcp !== "" && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
+              <div style={{ ...S.label, marginBottom: 6 }}>Pops on this hole</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {active.map((p, i) => {
+                  const st = strokeMode === "full"
+                    ? strokeFor(Number(p.hcp) || 0, h.holeHcp)
+                    : strokeFor((Number(p.hcp) || 0) - minHcp, h.holeHcp);
+                  return (
+                    <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 14,
+                      background: st > 0 ? "#dbeafe" : "#f1f5f9",
+                      color: st > 0 ? "#0369a1" : "#94a3b8" }}>
+                      {p.name} {st > 0 ? `+${st}` : "—"}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Wolf */}

@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Wolf Hammer 🔨 Golf</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #f1f5f9; }
+  #root { min-height: 100vh; }
+  input, select, button { font-family: inherit; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(function () {
+  let backend;
+  try {
+    localStorage.setItem("__ping", "1");
+    localStorage.removeItem("__ping");
+    backend = localStorage;
+  } catch (e) {
+    const mem = new Map();
+    backend = {
+      getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+      setItem: (k, v) => mem.set(k, String(v)),
+      removeItem: (k) => mem.delete(k),
+      get length() { return mem.size; },
+      key: (i) => Array.from(mem.keys())[i],
+    };
+    console.warn("localStorage unavailable; using in-memory storage");
+  }
+  window.storage = {
+    get: async (k) => { const v = backend.getItem(k); return v === null ? null : { key: k, value: v }; },
+    set: async (k, v) => { backend.setItem(k, v); return { key: k, value: v }; },
+    delete: async (k) => { backend.removeItem(k); return { key: k, deleted: true }; },
+    list: async (prefix) => {
+      const keys = [];
+      for (let i = 0; i < backend.length; i++) {
+        const k = backend.key(i);
+        if (!prefix || k.startsWith(prefix)) keys.push(k);
+      }
+      return { keys };
+    },
+  };
+})();
+</script>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useRef } = React;
+
+// ---------- Courses ----------
+const COURSES = {
+  "Flying Horse Club": [
+    { par: 4, hcp: 3 }, { par: 3, hcp: 17 }, { par: 5, hcp: 11 },
+    { par: 4, hcp: 5 }, { par: 4, hcp: 1 }, { par: 4, hcp: 7 },
+    { par: 3, hcp: 13 }, { par: 5, hcp: 15 }, { par: 4, hcp: 9 },
+    { par: 5, hcp: 14 }, { par: 4, hcp: 4 }, { par: 5, hcp: 10 },
+    { par: 3, hcp: 16 }, { par: 4, hcp: 2 }, { par: 4, hcp: 18 },
+    { par: 3, hcp: 12 }, { par: 4, hcp: 6 }, { par: 4, hcp: 8 },
+  ],
+  "Flying Horse North": [
+    { par: 4, hcp: 9 }, { par: 4, hcp: 3 }, { par: 3, hcp: 11 },
+    { par: 4, hcp: 7 }, { par: 5, hcp: 17 }, { par: 3, hcp: 15 },
+    { par: 4, hcp: 1 }, { par: 5, hcp: 13 }, { par: 4, hcp: 5 },
+    { par: 5, hcp: 4 }, { par: 3, hcp: 18 }, { par: 4, hcp: 6 },
+    { par: 4, hcp: 2 }, { par: 4, hcp: 8 }, { par: 3, hcp: 16 },
+    { par: 4, hcp: 10 }, { par: 4, hcp: 12 }, { par: 5, hcp: 14 },
+  ],
+  "Keystone River Course": [
+    { par: 5, hcp: 15 }, { par: 4, hcp: 17 }, { par: 3, hcp: 1 },
+    { par: 4, hcp: 11 }, { par: 5, hcp: 3 }, { par: 4, hcp: 5 },
+    { par: 3, hcp: 9 }, { par: 4, hcp: 7 }, { par: 3, hcp: 13 },
+    { par: 4, hcp: 8 }, { par: 4, hcp: 6 }, { par: 3, hcp: 12 },
+    { par: 5, hcp: 14 }, { par: 4, hcp: 4 }, { par: 3, hcp: 10 },
+    { par: 4, hcp: 2 }, { par: 4, hcp: 16 }, { par: 5, hcp: 18 },
+  ],
+  "Beaver Creek GC": [
+    { par: 5, hcp: 3 }, { par: 3, hcp: 15 }, { par: 5, hcp: 1 },
+    { par: 3, hcp: 17 }, { par: 4, hcp: 5 }, { par: 4, hcp: 9 },
+    { par: 4, hcp: 11 }, { par: 4, hcp: 13 }, { par: 4, hcp: 7 },
+    { par: 3, hcp: 14 }, { par: 4, hcp: 10 }, { par: 3, hcp: 16 },
+    { par: 5, hcp: 6 }, { par: 4, hcp: 2 }, { par: 4, hcp: 12 },
+    { par: 3, hcp: 18 }, { par: 4, hcp: 8 }, { par: 4, hcp: 4 },
+  ],
+  "Hiwan GC": [
+    { par: 4, hcp: 3 }, { par: 5, hcp: 13 }, { par: 3, hcp: 9 },
+    { par: 4, hcp: 7 }, { par: 4, hcp: 15 }, { par: 4, hcp: 11 },
+    { par: 4, hcp: 1 }, { par: 3, hcp: 17 }, { par: 4, hcp: 5 },
+    { par: 4, hcp: 10 }, { par: 4, hcp: 2 }, { par: 3, hcp: 18 },
+    { par: 4, hcp: 12 }, { par: 4, hcp: 16 }, { par: 5, hcp: 14 },
+    { par: 3, hcp: 8 }, { par: 4, hcp: 4 }, { par: 4, hcp: 6 },
+  ],
+  "Fossil Trace": [
+    { par: 5, hcp: 3 }, { par: 4, hcp: 13 }, { par: 3, hcp: 15 },
+    { par: 4, hcp: 5 }, { par: 3, hcp: 17 }, { par: 4, hcp: 9 },
+    { par: 4, hcp: 11 }, { par: 4, hcp: 7 }, { par: 5, hcp: 1 },
+    { par: 4, hcp: 10 }, { par: 3, hcp: 16 }, { par: 5, hcp: 4 },
+    { par: 4, hcp: 8 }, { par: 3, hcp: 14 }, { par: 5, hcp: 2 },
+    { par: 3, hcp: 18 }, { par: 4, hcp: 12 }, { par: 5, hcp: 6 },
+  ],
+};
+
+const NINE_COURSES = {
+  "Breckenridge GC": {
+    Beaver: [
+      { par: 4, hcp: 4 }, { par: 5, hcp: 6 }, { par: 3, hcp: 9 },
+      { par: 4, hcp: 5 }, { par: 4, hcp: 3 }, { par: 4, hcp: 8 },
+      { par: 4, hcp: 2 }, { par: 5, hcp: 1 }, { par: 3, hcp: 7 },
+    ],
+    Bear: [
+      { par: 4, hcp: 6 }, { par: 5, hcp: 9 }, { par: 4, hcp: 4 },
+      { par: 3, hcp: 8 }, { par: 4, hcp: 7 }, { par: 5, hcp: 3 },
+      { par: 3, hcp: 5 }, { par: 4, hcp: 2 }, { par: 4, hcp: 1 },
+    ],
+    Elk: [
+      { par: 4, hcp: 9 }, { par: 5, hcp: 3 }, { par: 3, hcp: 8 },
+      { par: 4, hcp: 5 }, { par: 3, hcp: 7 }, { par: 4, hcp: 6 },
+      { par: 4, hcp: 1 }, { par: 5, hcp: 2 }, { par: 4, hcp: 4 },
+    ],
+  },
+};
+
+const NINE_NAMES = (c) => (NINE_COURSES[c] ? Object.keys(NINE_COURSES[c]) : []);
+const isMultiNine = (c) => !!NINE_COURSES[c];
+const ALL_COURSES = [...Object.keys(COURSES), ...Object.keys(NINE_COURSES)];
+
+const resolveLayout = (course, nineA, nineB) => {
+  if (COURSES[course]) return COURSES[course];
+  const nines = NINE_COURSES[course];
+  if (!nines) return null;
+  const names = Object.keys(nines);
+  const a = nines[nineA] || nines[names[0]];
+  const b = nines[nineB] || nines[names[1]] || a;
+  return [
+    ...a.map((h) => ({ par: h.par, hcp: h.hcp * 2 - 1 })),
+    ...b.map((h) => ({ par: h.par, hcp: h.hcp * 2 })),
+  ];
+};
+
+// ---------- Game math ----------
+const strokeFor = (handiCalc, holeHcp) => (handiCalc >= holeHcp ? 1 : 0);
+
+// ---------- THE JUNK ----------
+// self: dot for your own team. opp: dot for the OTHER team.
+const JUNK = [
+  { k: "greenie",  n: "Greenie",       d: 1, par3: true,  desc: "Par 3 only — closest to pin in regulation, par or better" },
+  { k: "sandy",    n: "Sandy",         d: 1, desc: "Par or better from any bunker" },
+  { k: "poley",    n: "Poley",         d: 1, desc: "Par or better, putt holed from outside the flagstick" },
+  { k: "hogan",    n: "Hogan",         d: 1, desc: "Fairway + green in regulation, par or better" },
+  { k: "junkman",  n: "Junkman",       d: 1, desc: "Miss fairway AND green in regulation, par or better" },
+  { k: "wasabi",   n: "Wasabi",        d: 1, desc: "Approach in regulation inside the flagstick, par or better" },
+  { k: "dwasabi",  n: "Double Wasabi", d: 2, desc: "2nd on a par 5 / tee shot on a par 4 inside the stick — 2 dots" },
+  { k: "offner",   n: "Offner",        d: 1, desc: "Holed from off the green without a putter, par or better" },
+  { k: "rattler",  n: "Rattler",       d: 1, desc: "Hits the flagstick (no putter), par or better" },
+  { k: "creekie",  n: "Creekie",       d: 1, desc: "Penalty stroke from a hazard, still par or better" },
+];
+const JUNK_BY_KEY = Object.fromEntries(JUNK.map((j) => [j.k, j]));
+
+// Priced by information: the less the wolf knows when he commits, the more it pays.
+const WOLF_MODES = [
+  { k: "blind",   n: "Blind",   when: "before anyone hits", m: 4, sub: "4x" },
+  { k: "solo",    n: "Solo",    when: "after my drive",     m: 3, sub: "3x" },
+  { k: "last",    n: "Lone",    when: "after all drives",   m: 2, sub: "2x" },
+  { k: "partner", n: "Partner", when: "pick a teammate",    m: 1, sub: "1x" },
+];
+const modeMult = (k, blindMult) => {
+  if (k === "blind") return blindMult === 6 ? 6 : 4;
+  return (WOLF_MODES.find((m) => m.k === k) || WOLF_MODES[0]).m;
+};
+
+// Full hole evaluation. Returns dots per side, money per player, and a log.
+function computeHole(hole, players, minHcp, strokeMode, hammerStyle, firstDotTaken, blindMult) {
+  const n = players.length;
+  const hcpOf = (i) => Number(players[i].hcp) || 0;
+  const hh = hole.holeHcp || 99;
+  const w = hole.wolf;
+  const par = hole.par;
+  const strokes = players.map((_, i) =>
+    strokeMode === "full" ? strokeFor(hcpOf(i), hh) : strokeFor(hcpOf(i) - minHcp, hh)
+  );
+  const nets = hole.gross.map((g, i) => (g == null ? null : g - strokes[i]));
+  const money = new Array(n).fill(0);
+  const ready = w != null && hole.gross.slice(0, n).every((g) => g != null && g > 0)
+    && (hole.mode !== "partner" || hole.partner != null);
+  if (!ready) return { strokes, nets, money, ready: false, log: [], dotsA: 0, dotsB: 0 };
+
+  const lone = hole.mode !== "partner";
+  const teamA = lone ? [w] : [w, hole.partner];              // wolf side
+  const teamB = players.map((_, i) => i).filter((i) => !teamA.includes(i));
+  const sideOf = (i) => (teamA.includes(i) ? "A" : "B");
+  const useNet = hole.scoreBy !== "gross";
+  const val = (i) => (useNet ? nets[i] : hole.gross[i]);
+
+  let dotsA = 0, dotsB = 0;
+  const log = [];
+  const add = (side, dots, label) => {
+    if (side === "A") dotsA += dots; else dotsB += dots;
+    log.push({ side, dots, label });
+  };
+
+  // HOLE — lowest score
+  const bestA = Math.min(...teamA.map(val));
+  const bestB = Math.min(...teamB.map(val));
+  if (bestA < bestB) add("A", 1, "Hole");
+  else if (bestB < bestA) add("B", 1, "Hole");
+
+  // BIRDIE / EAGLE / ALBATROSS (gross vs par), plus Dottie Pepper / Menage
+  const underCount = { A: 0, B: 0 };
+  players.forEach((_, i) => {
+    const d = hole.gross[i] - par;
+    const s = sideOf(i);
+    if (d <= -3) { add(s, 3, `${players[i].name} albatross`); underCount[s]++; }
+    else if (d === -2) { add(s, 2, `${players[i].name} eagle`); underCount[s]++; }
+    else if (d === -1) { add(s, 1, `${players[i].name} birdie`); underCount[s]++; }
+  });
+  ["A", "B"].forEach((s) => {
+    if (underCount[s] >= 2) add(s, 1, "Dottie Pepper");
+    if (underCount[s] >= 3) add(s, 1, "Menage");
+  });
+
+  // Manual junk
+  players.forEach((_, i) => {
+    const mine = hole.junk?.[i] || {};
+    Object.keys(mine).forEach((k) => {
+      if (!mine[k]) return;
+      const j = JUNK_BY_KEY[k];
+      if (!j) return;
+      const s = j.opp ? (sideOf(i) === "A" ? "B" : "A") : sideOf(i);
+      add(s, j.d, `${players[i].name} ${j.n}`);
+    });
+    // Custom "Other" dots — free-form house junk
+    (hole.other?.[i] || []).forEach((o) => {
+      const dots = Number(o.dots) || 0;
+      if (!dots) return;
+      const s = o.opp ? (sideOf(i) === "A" ? "B" : "A") : sideOf(i);
+      add(s, dots, `${players[i].name} ${o.label || "Other"}`);
+    });
+  });
+
+  // HAMMER — either dots into the pot or doubling, depending on house rule
+  let hamMult = 1;
+  let potDots = 0;
+  if (hole.hammer) {
+    const thrower = hole.hammerBy === "B" ? "B" : "A";
+    if (hammerStyle === "dots") {
+      // Hammer, take and boomerang each add a dot to the HOLE — the winner takes them.
+      potDots += 1;
+      if (hole.taken) {
+        potDots += 1;
+        if (hole.boomerang) potDots += 1;
+      }
+    } else {
+      if (hole.taken) {
+        hamMult = hole.boomerang ? 4 : 2;
+      } else {
+        // Dropped — conceding side forfeits the hole at current stakes
+        const other = thrower === "A" ? "B" : "A";
+        const cur = thrower === "A" ? dotsA - dotsB : dotsB - dotsA;
+        if (cur <= 0) add(thrower, 1 - cur, "Hammer conceded");
+      }
+    }
+  }
+
+  // RAMBO — first dot of the day gets a bonus
+  if (!firstDotTaken && (dotsA > 0 || dotsB > 0)) {
+    add(dotsA >= dotsB ? "A" : "B", 1, "Rambo (first blood)");
+  }
+
+  // Hammer dots go into the pot — the side winning the hole collects them
+  if (potDots > 0) {
+    const lead = dotsA > dotsB ? "A" : dotsB > dotsA ? "B" : null;
+    if (lead) add(lead, potDots, `Hammer pot (${potDots})`);
+  }
+
+  // KY / O.J. — blowout bonuses on net dots
+  let net = dotsA - dotsB;
+  const winSide = net > 0 ? "A" : net < 0 ? "B" : null;
+  const absNet = Math.abs(net);
+  if (winSide && absNet >= 7) add(winSide, 1, "KY (7+ dots)");
+  if (winSide && absNet >= 10) add(winSide, 1, "O.J. (10+ dots)");
+
+  net = dotsA - dotsB;
+  const wolfMult = modeMult(hole.mode, blindMult);
+  const totalMult = wolfMult * hamMult;
+  const netDots = net * totalMult;
+
+  // Settle: even teams pay per-player; a lone wolf covers all three.
+  if (netDots !== 0) {
+    if (lone) {
+      teamB.forEach((i) => (money[i] -= netDots));
+      money[w] += netDots * teamB.length;
+    } else {
+      teamA.forEach((i) => (money[i] += netDots));
+      teamB.forEach((i) => (money[i] -= netDots));
+    }
+  }
+  return { strokes, nets, money, ready: true, log, dotsA, dotsB, net, netDots, wolfMult, hamMult, totalMult, teamA, teamB, lone };
+}
+
+const INDEX_KEY = "wolfhammer-rounds-index";
+const roundKey = (id) => `wolfhammer-round:${id}`;
+
+const packSnapshot = (payload) => {
+  const json = JSON.stringify(payload);
+  const b64 = btoa(unescape(encodeURIComponent(json)));
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+const unpackSnapshot = (str) => {
+  try {
+    let b = str.replace(/-/g, "+").replace(/_/g, "/");
+    while (b.length % 4) b += "=";
+    return JSON.parse(decodeURIComponent(escape(atob(b))));
+  } catch (e) { return null; }
+};
+
+function WolfHammer() {
+  const [phase, setPhase] = useState("setup");
+  const [players, setPlayers] = useState(Array.from({ length: 4 }, () => ({ name: "", hcp: "" })));
+  const [dotValue, setDotValue] = useState("1");
+  const [numHoles, setNumHoles] = useState(18);
+  const [course, setCourse] = useState("Flying Horse Club");
+  const [strokeMode, setStrokeMode] = useState("low");
+  const [scoreBy, setScoreBy] = useState("net");
+  const [hammerStyle, setHammerStyle] = useState("double");
+  const [blindMult, setBlindMult] = useState(4);
+  const [nineA, setNineA] = useState("Beaver");
+  const [nineB, setNineB] = useState("Bear");
+  const [nine, setNine] = useState("front");
+  const [holes, setHoles] = useState([]);
+  const [order, setOrder] = useState([0, 1, 2, 3]);
+  const [cur, setCur] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [roundId, setRoundId] = useState(null);
+  const [roundStatus, setRoundStatus] = useState("in-progress");
+  const [savedRounds, setSavedRounds] = useState([]);
+  const [saveState, setSaveState] = useState("idle");
+  const [lastError, setLastError] = useState(null);
+  const [junkFor, setJunkFor] = useState(null);
+  const [otherLabel, setOtherLabel] = useState("");
+  const [otherDots, setOtherDots] = useState("1");
+  const [otherOpp, setOtherOpp] = useState(false);
+  const stateRef = useRef({});
+  const saveTimer = useRef(null);
+
+  const active = useMemo(() => players.filter((p) => p.name.trim() !== ""), [players]);
+  const minHcp = useMemo(() => (active.length ? Math.min(...active.map((p) => Number(p.hcp) || 0)) : 0), [active]);
+  const layout = useMemo(() => resolveLayout(course, nineA, nineB), [course, nineA, nineB]);
+  const dotVal = Number(dotValue) || 0;
+  const closingFrom = numHoles === 9 ? 7 : 15; // hole 16 of 18 => index 15
+
+  const emptyHole = (num, lay) => {
+    const c = lay?.[num - 1];
+    return {
+      num, par: c?.par ?? 4, holeHcp: c?.hcp ?? "",
+      wolf: null, partner: null, mode: "partner",
+      hammer: false, hammerBy: "B", taken: true, boomerang: false,
+      gross: [null, null, null, null], junk: [{}, {}, {}, {}], other: [[], [], [], []],
+      scoreBy, done: false,
+    };
+  };
+
+  const results = useMemo(() => {
+    let firstDot = false;
+    return holes.map((h) => {
+      if (!h.done) return null;
+      const r = computeHole(h, active, minHcp, strokeMode, hammerStyle, firstDot, blindMult);
+      if (r.ready && (r.dotsA > 0 || r.dotsB > 0)) firstDot = true;
+      return r;
+    });
+  }, [holes, active, minHcp, strokeMode, hammerStyle, blindMult]);
+
+  const totals = useMemo(() => {
+    const n = active.length;
+    const dots = new Array(n).fill(0);
+    const gross = new Array(n).fill(0);
+    const junkCount = new Array(n).fill(0);
+    const loneTries = new Array(n).fill(0);
+    const loneWins = new Array(n).fill(0);
+    let biggest = 0, biggestLabel = "";
+    holes.forEach((h, hi) => {
+      const r = results[hi];
+      if (!r?.ready) return;
+      for (let i = 0; i < n; i++) {
+        dots[i] += r.money[i];
+        if (h.gross[i] != null) gross[i] += h.gross[i];
+        junkCount[i] += Object.values(h.junk?.[i] || {}).filter(Boolean).length + (h.other?.[i]?.length || 0);
+      }
+      if (r.lone && h.wolf != null) {
+        loneTries[h.wolf]++;
+        if (r.money[h.wolf] > 0) loneWins[h.wolf]++;
+      }
+      const swing = Math.abs(r.netDots || 0);
+      if (swing > biggest) { biggest = swing; biggestLabel = `Hole ${h.num}`; }
+    });
+    return { dots, gross, junkCount, loneTries, loneWins, biggest, biggestLabel, money: dots.map((d) => d * dotVal) };
+  }, [holes, results, active, dotVal]);
+
+  // ---- persistence ----
+  const loadIndex = async () => {
+    try {
+      const r = await window.storage.get(INDEX_KEY);
+      const idx = r?.value ? JSON.parse(r.value) : [];
+      setSavedRounds(idx); return idx;
+    } catch (e) { setSavedRounds([]); return []; }
+  };
+  const loadRound = async (id) => {
+    try {
+      const r = await window.storage.get(roundKey(id));
+      if (!r?.value) return;
+      const s = JSON.parse(r.value);
+      setPlayers(s.players); setDotValue(s.dotValue ?? "1"); setNumHoles(s.numHoles);
+      setCourse(s.course ?? "__manual__");
+      if (s.strokeMode) setStrokeMode(s.strokeMode);
+      if (s.scoreBy) setScoreBy(s.scoreBy);
+      if (s.hammerStyle) setHammerStyle(s.hammerStyle);
+      if (s.blindMult) setBlindMult(s.blindMult);
+      if (s.nineA) setNineA(s.nineA); if (s.nineB) setNineB(s.nineB);
+      if (s.order) setOrder(s.order);
+      setHoles(s.holes); setCur(s.cur); setRoundId(id);
+      setRoundStatus(s.status || "in-progress");
+      setPhase(s.status === "complete" ? "summary" : s.phase === "setup" ? "play" : s.phase);
+    } catch (e) {}
+  };
+  useEffect(() => {
+    (async () => {
+      const idx = await loadIndex();
+      const inProg = idx.find((e) => e.status === "in-progress");
+      if (inProg) await loadRound(inProg.id);
+      setLoaded(true);
+    })();
+  }, []);
+
+  stateRef.current = { players, dotValue, numHoles, course, strokeMode, scoreBy, hammerStyle, blindMult, nineA, nineB, order, holes, cur, phase, roundStatus, roundId, savedRounds };
+
+  const saveNow = async (attempt = 0) => {
+    const st = stateRef.current;
+    if (!st.roundId || st.holes.length === 0) return false;
+    setSaveState("saving");
+    const meta = {
+      id: st.roundId, date: st.roundId.slice(0, 10), course: st.course, status: st.roundStatus,
+      players: st.players.filter((p) => p.name.trim()).map((p) => p.name),
+      holesScored: st.holes.filter((h) => h.done).length, numHoles: st.holes.length,
+    };
+    try {
+      await window.storage.set(roundKey(st.roundId), JSON.stringify({
+        players: st.players, dotValue: st.dotValue, numHoles: st.numHoles, course: st.course,
+        strokeMode: st.strokeMode, scoreBy: st.scoreBy, hammerStyle: st.hammerStyle, blindMult: st.blindMult,
+        nineA: st.nineA, nineB: st.nineB, order: st.order,
+        holes: st.holes, cur: st.cur, phase: st.phase, status: st.roundStatus,
+      }));
+      const idx = [meta, ...st.savedRounds.filter((e) => e.id !== st.roundId)];
+      await window.storage.set(INDEX_KEY, JSON.stringify(idx));
+      setSavedRounds(idx); setSaveState("saved"); return true;
+    } catch (e) {
+      if (attempt < 2) { await new Promise((r) => setTimeout(r, 1200 * (attempt + 1))); return saveNow(attempt + 1); }
+      setSaveState("error"); setLastError((e?.message || String(e)).slice(0, 200)); return false;
+    }
+  };
+  useEffect(() => {
+    if (!loaded || !roundId || holes.length === 0) return;
+    setSaveState("saving");
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => saveNow(), 900);
+    return () => saveTimer.current && clearTimeout(saveTimer.current);
+  }, [players, dotValue, numHoles, course, strokeMode, scoreBy, hammerStyle, blindMult, nineA, nineB, order, holes, cur, roundStatus, loaded, roundId]);
+
+  const deleteRound = async (id) => {
+    if (!window.confirm("Delete this saved round?")) return;
+    try { await window.storage.delete(roundKey(id)); } catch (e) {}
+    const idx = savedRounds.filter((e) => e.id !== id);
+    setSavedRounds(idx);
+    try { await window.storage.set(INDEX_KEY, JSON.stringify(idx)); } catch (e) {}
+    if (id === roundId) { setRoundId(null); setHoles([]); setCur(0); setPhase("setup"); }
+  };
+
+  const startRound = () => {
+    setRoundId(new Date().toISOString().slice(0, 10) + "-" + Date.now());
+    setRoundStatus("in-progress");
+    const offset = numHoles === 9 && nine === "back" && !isMultiNine(course) ? 9 : 0;
+    const hs = Array.from({ length: numHoles }, (_, i) => emptyHole(offset + i + 1, layout));
+    hs[0].wolf = order[0];
+    setHoles(hs); setCur(0); setPhase("play");
+  };
+  const resetAll = () => {
+    if (!window.confirm("Start a new round? This one stays saved in your library.")) return;
+    setRoundId(null); setRoundStatus("in-progress"); setHoles([]); setCur(0); setPhase("setup");
+  };
+
+  const fmt = (v) => (v < 0 ? `-$${Math.abs(v).toFixed(v % 1 ? 2 : 0)}` : `$${v.toFixed(v % 1 ? 2 : 0)}`);
+  const mColor = (v) => (v > 0 ? "#15803d" : v < 0 ? "#b91c1c" : "#64748b");
+
+  const S = {
+    app: { maxWidth: 480, margin: "0 auto", fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f1f5f9", minHeight: "100vh", paddingBottom: 90 },
+    header: { background: "#7f1d1d", color: "white", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10 },
+    card: { background: "white", borderRadius: 12, padding: 16, margin: "12px 12px 0", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" },
+    label: { fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 },
+    input: { width: "100%", padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 16, boxSizing: "border-box" },
+    btn: { background: "#7f1d1d", color: "white", border: "none", borderRadius: 10, padding: "14px", fontSize: 16, fontWeight: 700, width: "100%", cursor: "pointer" },
+    btnGhost: { background: "white", color: "#7f1d1d", border: "2px solid #7f1d1d", borderRadius: 10, padding: "12px", fontSize: 15, fontWeight: 700, width: "100%", cursor: "pointer" },
+    chip: (on) => ({ flex: 1, padding: "9px 0", borderRadius: 8, border: on ? "2px solid #7f1d1d" : "1px solid #cbd5e1", background: on ? "#fee2e2" : "white", fontWeight: on ? 700 : 500, fontSize: 13, cursor: "pointer", textAlign: "center" }),
+    tabbar: { position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 480, margin: "0 auto", display: "flex", background: "white", borderTop: "1px solid #e2e8f0" },
+    tab: (on) => ({ flex: 1, padding: "12px 0", textAlign: "center", fontSize: 13, fontWeight: on ? 700 : 500, color: on ? "#7f1d1d" : "#94a3b8", borderTop: on ? "3px solid #7f1d1d" : "3px solid transparent", cursor: "pointer" }),
+    stepBtn: { width: 40, height: 40, borderRadius: 10, border: "1px solid #cbd5e1", background: "white", fontSize: 20, fontWeight: 700, cursor: "pointer", flexShrink: 0 },
+  };
+
+  const Nav = () => (
+    <div style={S.tabbar}>
+      {[["play", "⛳ Hole"], ["card", "📋 Card"], ["summary", "💰 Money"], ["setup", "🏠 Rounds"]].map(([k, l]) => (
+        <div key={k} style={{ ...S.tab(phase === k), opacity: holes.length === 0 && k !== "setup" ? 0.4 : 1 }}
+          onClick={() => (holes.length > 0 || k === "setup") && setPhase(k)}>{l}</div>
+      ))}
+    </div>
+  );
+  const SaveDot = () => !roundId || holes.length === 0 ? null : (
+    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 10,
+      background: saveState === "error" ? "#fee2e2" : saveState === "saving" ? "#fef3c7" : "#dcfce7",
+      color: saveState === "error" ? "#b91c1c" : saveState === "saving" ? "#b45309" : "#15803d" }}
+      onClick={() => { if (saveState !== "error") return; if (lastError) alert("Save error: " + lastError); saveNow(); }}
+    >{saveState === "error" ? "⚠ Save failed — tap" : saveState === "saving" ? "Saving…" : "✓ Saved"}</span>
+  );
+
+  const buildShareUrl = () => {
+    const payload = {
+      c: course, h: holes.filter((x) => x.done).length, d: new Date().toLocaleDateString(), v: dotVal,
+      p: active.map((p, i) => ({ n: p.name, m: Math.round(totals.money[i] * 100) / 100, dt: totals.dots[i], g: totals.gross[i] || 0, j: totals.junkCount[i] })),
+    };
+    return window.location.origin + window.location.pathname + "#v=" + packSnapshot(payload);
+  };
+  const shareStandings = async () => {
+    const url = buildShareUrl();
+    try {
+      if (navigator.share) { await navigator.share({ title: "Wolf Hammer", text: `Wolf Hammer after ${holes.filter((x) => x.done).length} holes`, url }); return; }
+      await navigator.clipboard.writeText(url); alert("Link copied — paste it into the group text!");
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      try { await navigator.clipboard.writeText(url); alert("Link copied!"); } catch (e2) { window.prompt("Copy this link:", url); }
+    }
+  };
+
+  // ---------- SETUP ----------
+  if (phase === "setup") {
+    return (
+      <div style={S.app}>
+        <div style={S.header}>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>🔨 Wolf Hammer</div>
+          <div style={{ fontSize: 13, opacity: 0.85 }}>Setup</div>
+        </div>
+
+        <div style={{ ...S.card, background: "#fef2f2", border: "1px solid #fecaca" }}>
+          <div style={{ fontSize: 13, color: "#7f1d1d", lineHeight: 1.5 }}>
+            ⚠️ <b>Play at your own risk.</b> Blind lone wolf multiplies the hole <i>and every dot of junk</i> by four. Rounds have ended friendships.
+          </div>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Players & Handicaps</div>
+          {players.map((p, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <input style={{ ...S.input, flex: 2 }} placeholder={`Player ${i + 1}`} value={p.name}
+                onChange={(e) => { const np = [...players]; np[i] = { ...np[i], name: e.target.value }; setPlayers(np); }} />
+              <input style={{ ...S.input, width: 76, flexShrink: 0 }} type="number" inputMode="numeric" placeholder="Hcp" value={p.hcp}
+                onChange={(e) => { const np = [...players]; np[i] = { ...np[i], hcp: e.target.value }; setPlayers(np); }} />
+            </div>
+          ))}
+          <div style={{ fontSize: 13, marginTop: 4 }}>
+            Wolf order: <b>{order.map((i) => players[i]?.name || `P${i + 1}`).join(" → ")}</b>
+          </div>
+          <button style={{ ...S.btnGhost, padding: "9px", fontSize: 13, marginTop: 8 }}
+            onClick={() => setOrder([...order.slice(1), order[0]])}>↻ Rotate order</button>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Dot Value</div>
+          <div style={{ position: "relative", width: 140 }}>
+            <span style={{ position: "absolute", left: 10, top: 11, color: "#64748b" }}>$</span>
+            <input style={{ ...S.input, paddingLeft: 24 }} type="number" inputMode="decimal" placeholder="1"
+              value={dotValue} onChange={(e) => setDotValue(e.target.value)} />
+          </div>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Hammer Style</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <div style={S.chip(hammerStyle === "double")} onClick={() => setHammerStyle("double")}>
+              <div>Doubles</div><div style={{ fontSize: 9, color: "#64748b", fontWeight: 500 }}>take 2x · boomerang 4x</div>
+            </div>
+            <div style={S.chip(hammerStyle === "dots")} onClick={() => setHammerStyle("dots")}>
+              <div>Adds Dots</div><div style={{ fontSize: 9, color: "#64748b", fontWeight: 500 }}>hammer + take + boomerang</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Blind Lone Wolf Value</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <div style={S.chip(blindMult === 4)} onClick={() => setBlindMult(4)}>
+              <div style={{ fontSize: 15, fontWeight: 800 }}>4x</div>
+              <div style={{ fontSize: 9, color: "#64748b", fontWeight: 500 }}>standard</div>
+            </div>
+            <div style={S.chip(blindMult === 6)} onClick={() => setBlindMult(6)}>
+              <div style={{ fontSize: 15, fontWeight: 800 }}>6x</div>
+              <div style={{ fontSize: 9, color: "#64748b", fontWeight: 500 }}>doubles the 3x solo</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
+            {blindMult === 6
+              ? "Blind doubles the solo rate. With a boomerang that's a 24x hole — know what you're agreeing to."
+              : "Standard: partner 1x, lone 2x, solo 3x, blind 4x."}
+          </div>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Hole Won By</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <div style={S.chip(scoreBy === "net")} onClick={() => setScoreBy("net")}>Net</div>
+            <div style={S.chip(scoreBy === "gross")} onClick={() => setScoreBy("gross")}>Gross</div>
+          </div>
+          {scoreBy === "net" && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ ...S.label, marginBottom: 6 }}>Strokes Roll Off</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <div style={S.chip(strokeMode === "low")} onClick={() => setStrokeMode("low")}>Low Man</div>
+                <div style={S.chip(strokeMode === "full")} onClick={() => setStrokeMode("full")}>Where They Land</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 8 }}>Course</div>
+          <select style={{ ...S.input, background: "white" }} value={course} onChange={(e) => setCourse(e.target.value)}>
+            {ALL_COURSES.map((c) => (<option key={c} value={c}>{c}</option>))}
+            <option value="__manual__">Manual entry</option>
+          </select>
+          {isMultiNine(course) && (
+            <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
+              <select style={{ ...S.input, background: "white" }} value={nineA} onChange={(e) => setNineA(e.target.value)}>
+                {NINE_NAMES(course).map((n) => (<option key={n} value={n}>{n}</option>))}
+              </select>
+              {numHoles === 18 && (<>
+                <span style={{ color: "#94a3b8", fontWeight: 700 }}>then</span>
+                <select style={{ ...S.input, background: "white" }} value={nineB} onChange={(e) => setNineB(e.target.value)}>
+                  {NINE_NAMES(course).map((n) => (<option key={n} value={n}>{n}</option>))}
+                </select>
+              </>)}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            {[9, 18].map((n) => (<div key={n} style={S.chip(numHoles === n)} onClick={() => setNumHoles(n)}>{n} holes</div>))}
+          </div>
+          {numHoles === 9 && COURSES[course] && (
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              {[["front", "Front 9"], ["back", "Back 9"]].map(([k, l]) => (
+                <div key={k} style={S.chip(nine === k)} onClick={() => setNine(k)}>{l}</div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: 12 }}>
+          <button style={{ ...S.btn, opacity: active.length === 4 ? 1 : 0.5 }} disabled={active.length !== 4} onClick={startRound}>
+            {active.length === 4 ? "Tee Off →" : "Needs exactly 4 players"}
+          </button>
+          {holes.length > 0 && (<button style={{ ...S.btnGhost, marginTop: 8 }} onClick={() => setPhase("play")}>Resume Current Round</button>)}
+        </div>
+
+        {savedRounds.length > 0 && (
+          <div style={S.card}>
+            <div style={{ ...S.label, marginBottom: 8 }}>Saved Rounds</div>
+            {savedRounds.map((e) => (
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid #f1f5f9" }}>
+                <div style={{ flex: 1, cursor: "pointer" }} onClick={() => loadRound(e.id)}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    {e.date} · {e.course !== "__manual__" ? e.course : "Manual"}
+                    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                      background: e.status === "complete" ? "#dcfce7" : "#fef3c7",
+                      color: e.status === "complete" ? "#15803d" : "#b45309" }}>
+                      {e.status === "complete" ? "Complete" : "In progress"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b" }}>{e.players.join(", ")} · {e.holesScored}/{e.numHoles} holes</div>
+                </div>
+                <button style={{ background: "none", border: "none", color: "#b91c1c", fontSize: 18, cursor: "pointer", padding: 6 }}
+                  onClick={() => deleteRound(e.id)}>🗑</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <Nav />
+      </div>
+    );
+  }
+
+  const h = holes[cur];
+  const w = h.wolf;
+  const isClosing = cur >= closingFrom;
+  const updateHole = (patch) => {
+    const nh = [...holes];
+    nh[cur] = { ...nh[cur], ...patch };
+    setHoles(nh);
+  };
+  const firstDotBefore = holes.slice(0, cur).some((hh, hi) => {
+    const rr = results[hi];
+    return rr?.ready && (rr.dotsA > 0 || rr.dotsB > 0);
+  });
+  const preview = computeHole({ ...h, scoreBy }, active, minHcp, strokeMode, hammerStyle, firstDotBefore, blindMult);
+  const wolfSide = (i) => preview.teamA?.includes(i);
+
+  // ---------- PLAY ----------
+  if (phase === "play") {
+    const mult = modeMult(h.mode, blindMult) * (h.hammer && h.taken && hammerStyle === "double" ? (h.boomerang ? 4 : 2) : 1);
+    return (
+      <div style={S.app}>
+        <div style={S.header}>
+          <button style={{ background: "none", border: "none", color: "white", fontSize: 24, cursor: "pointer", opacity: cur > 0 ? 1 : 0.3 }}
+            onClick={() => cur > 0 && setCur(cur - 1)}>‹</button>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontWeight: 800, fontSize: 18 }}>
+              Hole {h.num} · Par {h.par}
+              <span style={{ fontSize: 12, opacity: 0.8, fontWeight: 500 }}> · Hcp {h.holeHcp || "?"}</span>
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>
+              {mult > 1 && <b>{mult}x · </b>}{holes.filter((x) => x.done).length}/{holes.length} <SaveDot />
+            </div>
+          </div>
+          <button style={{ background: "none", border: "none", color: "white", fontSize: 24, cursor: "pointer", opacity: cur < holes.length - 1 ? 1 : 0.3 }}
+            onClick={() => cur < holes.length - 1 && setCur(cur + 1)}>›</button>
+        </div>
+
+        {/* Hole info */}
+        <div style={S.card}>
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={S.label}>Par</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                {[3, 4, 5].map((pv) => (
+                  <div key={pv} style={S.chip(h.par === pv)} onClick={() => updateHole({ par: pv })}>{pv}</div>
+                ))}
+              </div>
+            </div>
+            <div style={{ width: 104 }}>
+              <div style={S.label}>Hole Hcp</div>
+              <input style={{ ...S.input, marginTop: 6 }} type="number" inputMode="numeric" placeholder="1-18"
+                value={h.holeHcp} onChange={(e) => updateHole({ holeHcp: Number(e.target.value) || "" })} />
+            </div>
+          </div>
+          {scoreBy === "net" && h.holeHcp === "" && (
+            <div style={{ fontSize: 12, color: "#b91c1c", marginTop: 8, fontWeight: 600 }}>
+              ⚠ No hole handicap set — nobody gets a pop on this hole.
+            </div>
+          )}
+        </div>
+
+        {/* Wolf */}
+        <div style={{ ...S.card, background: isClosing ? "#fef3c7" : "white" }}>
+          <div style={{ ...S.label, marginBottom: 6 }}>
+            🐺 The Wolf {isClosing && <span style={{ color: "#b45309" }}>· down the most, sets dot value</span>}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {active.map((p, i) => (
+              <div key={i} onClick={() => updateHole({ wolf: i, partner: null })}
+                style={{ padding: "8px 12px", borderRadius: 8, fontSize: 14, cursor: "pointer",
+                  border: w === i ? "2px solid #7f1d1d" : "1px solid #cbd5e1",
+                  background: w === i ? "#fee2e2" : "white", fontWeight: w === i ? 800 : 500 }}>
+                {w === i ? "🐺 " : ""}{p.name}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* The call */}
+        {w != null && (
+          <div style={S.card}>
+            <div style={{ ...S.label, marginBottom: 8 }}>The Call</div>
+            <div style={{ display: "flex", gap: 5, marginBottom: 10 }}>
+              {WOLF_MODES.map((m) => (
+                <div key={m.k} style={{ ...S.chip(h.mode === m.k), padding: "8px 2px" }}
+                  onClick={() => updateHole({ mode: m.k, partner: m.k === "partner" ? h.partner : null })}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: m.m > 1 ? "#b45309" : "#64748b" }}>
+                    {m.k === "blind" ? `${blindMult}x` : m.sub}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.2 }}>{m.n}</div>
+                  <div style={{ fontSize: 8, color: "#94a3b8", fontWeight: 500, lineHeight: 1.3, marginTop: 2 }}>{m.when}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8, textAlign: "center" }}>
+              The less you know when you commit, the more it pays.
+            </div>
+            {h.mode === "partner" && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {active.map((p, i) => i === w ? null : (
+                  <div key={i} onClick={() => updateHole({ partner: i })}
+                    style={{ padding: "8px 12px", borderRadius: 8, fontSize: 14, cursor: "pointer",
+                      border: h.partner === i ? "2px solid #7f1d1d" : "1px solid #cbd5e1",
+                      background: h.partner === i ? "#fee2e2" : "white", fontWeight: h.partner === i ? 800 : 500 }}>
+                    {p.name}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Hammer */}
+        {w != null && (
+          <div style={{ ...S.card, background: h.hammer ? "#fef3c7" : "white", border: h.hammer ? "1px solid #fcd34d" : "none" }}>
+            <div style={{ ...S.label, marginBottom: 8 }}>🔨 The Hammer</div>
+            {!h.hammer ? (
+              <div style={{ display: "flex", gap: 6 }}>
+                <button style={{ ...S.btnGhost, padding: "10px", fontSize: 13 }}
+                  onClick={() => updateHole({ hammer: true, hammerBy: "A", taken: true, boomerang: false })}>
+                  Wolf side throws
+                </button>
+                <button style={{ ...S.btnGhost, padding: "10px", fontSize: 13 }}
+                  onClick={() => updateHole({ hammer: true, hammerBy: "B", taken: true, boomerang: false })}>
+                  Field throws
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
+                  {h.hammerBy === "A" ? "Wolf side" : "The field"} threw the hammer
+                </div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                  <div style={S.chip(h.taken)} onClick={() => updateHole({ taken: true })}>Taken</div>
+                  <div style={S.chip(!h.taken)} onClick={() => updateHole({ taken: false, boomerang: false })}>Dropped</div>
+                </div>
+                {h.taken && (
+                  <div onClick={() => updateHole({ boomerang: !h.boomerang })}
+                    style={{ padding: "12px", borderRadius: 10, textAlign: "center", fontWeight: 800, fontSize: 15, cursor: "pointer",
+                      border: h.boomerang ? "2px solid #b45309" : "2px dashed #cbd5e1",
+                      background: h.boomerang ? "#fed7aa" : "white",
+                      color: h.boomerang ? "#7c2d12" : "#94a3b8" }}>
+                    {h.boomerang ? "🪃 BOOMERANG — thrown right back (4x)" : "🪃 Boomerang it back?"}
+                  </div>
+                )}
+                <button style={{ ...S.btnGhost, marginTop: 8, padding: "8px", fontSize: 12 }}
+                  onClick={() => updateHole({ hammer: false, boomerang: false, taken: true })}>Clear hammer</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Scores + junk */}
+        {w != null && (h.mode !== "partner" || h.partner != null) && (
+          <div style={S.card}>
+            <div style={{ ...S.label, marginBottom: 8 }}>Scores & Junk</div>
+            {active.map((p, i) => {
+              const g = h.gross[i], diff = g == null ? null : g - h.par;
+              const myJunk = Object.keys(h.junk?.[i] || {}).filter((k) => h.junk[i][k]);
+              const onWolf = wolfSide(i);
+              return (
+                <div key={i} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #f1f5f9" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>
+                      <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, marginRight: 6,
+                        background: onWolf ? "#7f1d1d" : "#f59e0b" }} />
+                      <span style={{ fontWeight: 600 }}>{p.name}</span>
+                      {i === w && <span style={{ marginLeft: 4 }}>🐺</span>}
+                      {scoreBy === "net" && preview.strokes?.[i] > 0 && h.holeHcp !== "" && (
+                        <span style={{ fontSize: 11, marginLeft: 5, color: "#0369a1", fontWeight: 700 }}>
+                          +{preview.strokes[i]} pop
+                        </span>
+                      )}
+                      {scoreBy === "net" && g != null && preview.strokes?.[i] > 0 && (
+                        <span style={{ fontSize: 11, marginLeft: 5, color: "#94a3b8" }}>
+                          net {g - preview.strokes[i]}
+                        </span>
+                      )}
+                    </div>
+                    <button style={S.stepBtn} onClick={() => { const gr = [...h.gross]; gr[i] = Math.max(1, (gr[i] ?? h.par) - 1); updateHole({ gross: gr }); }}>−</button>
+                    <div style={{ width: 30, textAlign: "center", fontSize: 19, fontWeight: 800,
+                      color: diff == null ? "#0f172a" : diff < 0 ? "#b91c1c" : diff === 0 ? "#0f172a" : "#64748b" }}>{g ?? "–"}</div>
+                    <button style={S.stepBtn} onClick={() => { const gr = [...h.gross]; gr[i] = (gr[i] ?? h.par - 1) + 1; updateHole({ gross: gr }); }}>+</button>
+                    <button style={{ ...S.stepBtn, width: 40, fontSize: 15, background: myJunk.length ? "#fee2e2" : "white", borderColor: myJunk.length ? "#7f1d1d" : "#cbd5e1" }}
+                      onClick={() => setJunkFor(i)}>+🗑</button>
+                  </div>
+                  {(myJunk.length > 0 || (h.other?.[i]?.length > 0)) && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, marginLeft: 14 }}>
+                      {myJunk.map((k) => (
+                        <span key={k} onClick={() => {
+                          const j = h.junk.map((x) => ({ ...x })); delete j[i][k]; updateHole({ junk: j });
+                        }} style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 10, cursor: "pointer",
+                          background: "#dcfce7", color: "#15803d" }}>
+                          {JUNK_BY_KEY[k]?.n} ✕
+                        </span>
+                      ))}
+                      {(h.other?.[i] || []).map((o, oi) => (
+                        <span key={"o" + oi} onClick={() => {
+                          const no = (h.other || [[], [], [], []]).map((x) => [...x]);
+                          no[i].splice(oi, 1); updateHole({ other: no });
+                        }} style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 10, cursor: "pointer",
+                          background: o.opp ? "#fee2e2" : "#e0e7ff", color: o.opp ? "#b91c1c" : "#3730a3" }}>
+                          {o.label || "Other"} {o.dots > 1 ? `×${o.dots}` : ""}{o.opp ? " ↔" : ""} ✕
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <button style={{ ...S.btnGhost, padding: "8px", fontSize: 13 }}
+              onClick={() => updateHole({ gross: active.map(() => h.par) })}>Set all to par</button>
+          </div>
+        )}
+
+        {/* Result */}
+        {preview.ready && (
+          <div style={{ ...S.card, background: "#fef2f2", border: "1px solid #fecaca" }}>
+            <div style={{ textAlign: "center", fontSize: 17, fontWeight: 800, padding: "2px 0",
+              color: preview.net === 0 ? "#64748b" : "#7f1d1d" }}>
+              {preview.net === 0 ? "🤝 Even — no dots"
+                : `${preview.net > 0 ? (preview.lone ? active[w].name : "Wolf side") : "The field"} wins ${Math.abs(preview.net)} dot${Math.abs(preview.net) !== 1 ? "s" : ""}`}
+            </div>
+            {preview.totalMult > 1 && preview.net !== 0 && (
+              <div style={{ textAlign: "center", fontSize: 14, fontWeight: 700, color: "#b45309" }}>
+                ×{preview.totalMult} = {Math.abs(preview.netDots)} dots ({fmt(Math.abs(preview.netDots) * dotVal)})
+              </div>
+            )}
+            {preview.log.length > 0 && (
+              <div style={{ fontSize: 12, marginTop: 8, maxHeight: 150, overflowY: "auto" }}>
+                {preview.log.map((l, li) => (
+                  <div key={li} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", color: "#475569" }}>
+                    <span>{l.label}</span>
+                    <b style={{ color: l.side === "A" ? "#7f1d1d" : "#b45309" }}>
+                      {l.side === "A" ? "wolf" : "field"} +{l.dots}
+                    </b>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 13, marginTop: 8, borderTop: "1px solid #fecaca", paddingTop: 8 }}>
+              {active.map((p, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                  <span>{p.name}{i === w ? " 🐺" : ""}</span>
+                  <b style={{ color: mColor(preview.money[i]) }}>
+                    {preview.money[i] === 0 ? "—" : `${preview.money[i] > 0 ? "+" : ""}${preview.money[i]} (${fmt(preview.money[i] * dotVal)})`}
+                  </b>
+                </div>
+              ))}
+            </div>
+            {!h.done ? (
+              <button style={{ ...S.btn, marginTop: 10 }} onClick={() => {
+                const nh = [...holes];
+                nh[cur] = { ...nh[cur], done: true, scoreBy };
+                if (cur < holes.length - 1 && nh[cur + 1].wolf == null) {
+                  if (cur + 1 >= closingFrom) {
+                    const run = active.map((_, i) => holes.reduce((s, hh, hi) => {
+                      const rr = results[hi]; return s + (rr?.ready ? rr.money[i] : 0);
+                    }, 0) + preview.money[i]);
+                    let worst = 0;
+                    run.forEach((v, i) => { if (v < run[worst]) worst = i; });
+                    nh[cur + 1] = { ...nh[cur + 1], wolf: worst };
+                  } else {
+                    nh[cur + 1] = { ...nh[cur + 1], wolf: order[(cur + 1) % order.length] };
+                  }
+                }
+                setHoles(nh);
+                if (cur < holes.length - 1) setTimeout(() => setCur(cur + 1), 250);
+                else setPhase("summary");
+              }}>Lock Hole {h.num} →</button>
+            ) : (
+              <div style={{ textAlign: "center", marginTop: 8, fontSize: 13, color: "#15803d", fontWeight: 700 }}>✓ Locked</div>
+            )}
+            {holes.filter((x) => x.done).length > 0 && (
+              <button style={{ ...S.btnGhost, marginTop: 8, padding: "10px", fontSize: 14 }} onClick={shareStandings}>
+                🔗 Share Standings
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Junk picker */}
+        {junkFor != null && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.85)", zIndex: 60, display: "flex", alignItems: "flex-end" }}
+            onClick={() => setJunkFor(null)}>
+            <div style={{ background: "white", borderRadius: "16px 16px 0 0", padding: 16, width: "100%", maxWidth: 480, margin: "0 auto", maxHeight: "82vh", overflowY: "auto" }}
+              onClick={(e) => e.stopPropagation()}>
+              <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 2 }}>Junk — {active[junkFor]?.name}</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
+                All of these require par or better.
+              </div>
+              {JUNK.map((j) => {
+                const on = !!h.junk?.[junkFor]?.[j.k];
+                const dim = j.par3 && h.par !== 3;
+                return (
+                  <div key={j.k} onClick={() => {
+                    if (dim) return;
+                    const nj = h.junk.map((x) => ({ ...x }));
+                    if (on) delete nj[junkFor][j.k]; else nj[junkFor][j.k] = true;
+                    updateHole({ junk: nj });
+                  }}
+                    style={{ padding: "10px 12px", marginBottom: 6, borderRadius: 10, cursor: dim ? "not-allowed" : "pointer",
+                      opacity: dim ? 0.35 : 1,
+                      border: on ? `2px solid ${j.opp ? "#b91c1c" : "#15803d"}` : "1px solid #e2e8f0",
+                      background: on ? (j.opp ? "#fee2e2" : "#dcfce7") : "white" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <b style={{ fontSize: 14 }}>{j.n}{j.d > 1 ? ` (${j.d} dots)` : ""}{j.opp ? " ↔" : ""}</b>
+                      {on && <span style={{ color: j.opp ? "#b91c1c" : "#15803d", fontWeight: 800 }}>✓</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{j.desc}</div>
+                  </div>
+                );
+              })}
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "2px solid #f1f5f9" }}>
+                <div style={{ ...S.label, marginBottom: 8 }}>Other — house junk</div>
+                <input style={{ ...S.input, marginBottom: 8 }} placeholder="What was it? (e.g. Cart Path, Snowman)"
+                  value={otherLabel} onChange={(e) => setOtherLabel(e.target.value)} />
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, color: "#64748b" }}>Dots</span>
+                  <button style={{ ...S.stepBtn, width: 36, height: 36, fontSize: 18 }}
+                    onClick={() => setOtherDots(String(Math.max(1, (Number(otherDots) || 1) - 1)))}>−</button>
+                  <div style={{ width: 28, textAlign: "center", fontSize: 17, fontWeight: 800 }}>{otherDots}</div>
+                  <button style={{ ...S.stepBtn, width: 36, height: 36, fontSize: 18 }}
+                    onClick={() => setOtherDots(String((Number(otherDots) || 1) + 1))}>+</button>
+                  <div style={{ flex: 1 }} />
+                  <div onClick={() => setOtherOpp(!otherOpp)}
+                    style={{ padding: "8px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      border: otherOpp ? "2px solid #b91c1c" : "1px solid #cbd5e1",
+                      background: otherOpp ? "#fee2e2" : "white", color: otherOpp ? "#b91c1c" : "#94a3b8" }}>
+                    ↔ other team
+                  </div>
+                </div>
+                <button style={{ ...S.btnGhost, padding: "10px", fontSize: 14, opacity: otherLabel.trim() ? 1 : 0.5 }}
+                  disabled={!otherLabel.trim()}
+                  onClick={() => {
+                    const no = (h.other || [[], [], [], []]).map((x) => [...x]);
+                    no[junkFor].push({ label: otherLabel.trim(), dots: Number(otherDots) || 1, opp: otherOpp });
+                    updateHole({ other: no });
+                    setOtherLabel(""); setOtherDots("1"); setOtherOpp(false);
+                  }}>+ Add Dot</button>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>
+                  Tap "other team" if it's the kind of junk that pays the opponents.
+                </div>
+              </div>
+              <button style={{ ...S.btn, marginTop: 12 }} onClick={() => setJunkFor(null)}>Done</button>
+            </div>
+          </div>
+        )}
+        <Nav />
+      </div>
+    );
+  }
+
+  // ---------- SCORECARD ----------
+  if (phase === "card") {
+    const cell = { padding: "5px 6px", textAlign: "center", fontSize: 12, whiteSpace: "nowrap" };
+    return (
+      <div style={S.app}>
+        <div style={S.header}>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>📋 Scorecard</div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>🐺 wolf · 🔨 hammer</div>
+        </div>
+        <div style={{ ...S.card, padding: 6, overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid #e2e8f0", color: "#64748b" }}>
+                <th style={{ ...cell, textAlign: "left" }}>Hole</th>
+                <th style={cell}>Par</th>
+                {active.map((p, i) => (<th key={i} style={cell}>{p.name.slice(0, 5)}</th>))}
+              </tr>
+            </thead>
+            <tbody>
+              {holes.map((hh, hi) => {
+                const rr = results[hi];
+                return (
+                  <tr key={hi} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }} onClick={() => { setCur(hi); setPhase("play"); }}>
+                    <td style={{ ...cell, textAlign: "left", fontWeight: 700 }}>
+                      {hh.num}
+                      {hh.done && hh.hammer && <span style={{ fontSize: 9 }}>🔨</span>}
+                      {hh.done && hh.boomerang && <span style={{ fontSize: 9 }}>🪃</span>}
+                      {hh.done && hh.mode === "blind" && <span style={{ fontSize: 9, color: "#b45309", fontWeight: 800 }}>4x</span>}
+                    </td>
+                    <td style={{ ...cell, color: "#94a3b8" }}>{hh.par}</td>
+                    {active.map((_, i) => {
+                      const g = hh.gross[i], d = g == null ? null : g - hh.par;
+                      return (
+                        <td key={i} style={{ ...cell, fontWeight: 600, color: d == null ? "#cbd5e1" : d < 0 ? "#b91c1c" : d === 0 ? "#0f172a" : "#64748b" }}>
+                          {hh.done ? (g ?? "–") : ""}{hh.wolf === i && <span style={{ fontSize: 8 }}>🐺</span>}
+                          {rr?.ready && rr.money[i] !== 0 && (
+                            <div style={{ fontSize: 9, fontWeight: 700, color: mColor(rr.money[i]) }}>
+                              {rr.money[i] > 0 ? "+" : ""}{rr.money[i]}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+              <tr style={{ background: "#fef2f2", fontWeight: 800, borderTop: "2px solid #7f1d1d" }}>
+                <td style={{ ...cell, textAlign: "left" }} colSpan={2}>Dots</td>
+                {active.map((_, i) => (
+                  <td key={i} style={{ ...cell, color: mColor(totals.dots[i]) }}>
+                    {totals.dots[i] > 0 ? "+" : ""}{totals.dots[i]}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <Nav />
+      </div>
+    );
+  }
+
+  // ---------- SUMMARY ----------
+  const order2 = active.map((p, i) => ({ ...p, i })).sort((a, b) => totals.money[b.i] - totals.money[a.i]);
+  return (
+    <div style={S.app}>
+      <div style={S.header}>
+        <div style={{ fontWeight: 800, fontSize: 18 }}>💰 Damage Report</div>
+        <div style={{ fontSize: 12, opacity: 0.85, display: "flex", alignItems: "center", gap: 6 }}>
+          {holes.filter((x) => x.done).length}/{holes.length} <SaveDot />
+        </div>
+      </div>
+      <div style={S.card}>
+        {order2.map((p, rank) => (
+          <div key={p.i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: rank < 3 ? "1px solid #f1f5f9" : "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ width: 18, color: "#cbd5e1", fontWeight: 700, fontSize: 13 }}>{rank + 1}</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{rank === 0 && totals.money[p.i] > 0 ? "👑 " : ""}{p.name}</div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>
+                  {totals.dots[p.i] > 0 ? "+" : ""}{totals.dots[p.i]} dots · {totals.junkCount[p.i]} junk
+                  {totals.loneTries[p.i] > 0 && ` · lone ${totals.loneWins[p.i]}/${totals.loneTries[p.i]}`}
+                </div>
+              </div>
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 19, color: mColor(totals.money[p.i]) }}>{fmt(totals.money[p.i])}</div>
+          </div>
+        ))}
+      </div>
+      {totals.biggest > 0 && (
+        <div style={S.card}>
+          <div style={{ ...S.label, marginBottom: 6 }}>Biggest Swing</div>
+          <div style={{ fontSize: 15 }}>
+            <b>{totals.biggestLabel}</b> — {totals.biggest} dots ({fmt(totals.biggest * dotVal)} a man)
+          </div>
+        </div>
+      )}
+      <div style={{ padding: 12 }}>
+        <button style={{ ...S.btn, marginBottom: 8 }} onClick={shareStandings}>🔗 Share Standings</button>
+        {roundStatus !== "complete" ? (
+          <button style={S.btnGhost} onClick={async () => {
+            setRoundStatus("complete"); stateRef.current.roundStatus = "complete";
+            const ok = await saveNow();
+            if (!ok) alert("Save failed — tap again in a few seconds.");
+          }}>✅ Finish & Save Round</button>
+        ) : (
+          <div style={{ textAlign: "center", fontWeight: 700, color: "#15803d", padding: "6px 0 10px" }}>✓ Round complete — saved</div>
+        )}
+        <button style={{ ...S.btnGhost, marginTop: 8 }} onClick={resetAll}>🆕 New Round</button>
+      </div>
+      <Nav />
+    </div>
+  );
+}
+
+function StandingsView({ data }) {
+  const fmt = (v) => (v < 0 ? `-$${Math.abs(v).toFixed(v % 1 ? 2 : 0)}` : `$${v.toFixed(v % 1 ? 2 : 0)}`);
+  const mColor = (v) => (v > 0 ? "#15803d" : v < 0 ? "#b91c1c" : "#64748b");
+  const S = {
+    app: { maxWidth: 480, margin: "0 auto", fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f1f5f9", minHeight: "100vh", paddingBottom: 40 },
+    header: { background: "#7f1d1d", color: "white", padding: "16px" },
+    card: { background: "white", borderRadius: 12, padding: 16, margin: "12px 12px 0", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" },
+    label: { fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 },
+  };
+  const rows = [...data.p].sort((a, b) => b.m - a.m);
+  return (
+    <div style={S.app}>
+      <div style={S.header}>
+        <div style={{ fontWeight: 800, fontSize: 20 }}>🔨 Wolf Hammer</div>
+        <div style={{ fontSize: 13, opacity: 0.85, marginTop: 3 }}>
+          {data.c && data.c !== "__manual__" ? data.c + " · " : ""}{data.h} holes{data.v ? ` · $${data.v}/dot` : ""}
+        </div>
+      </div>
+      <div style={S.card}>
+        <div style={{ ...S.label, marginBottom: 8 }}>The Damage</div>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: i < rows.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ width: 18, color: "#cbd5e1", fontWeight: 700, fontSize: 13 }}>{i + 1}</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{i === 0 && r.m > 0 ? "👑 " : ""}{r.n}</div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>
+                  {r.dt > 0 ? "+" : ""}{r.dt} dots{r.g ? ` · ${r.g} gross` : ""}{r.j ? ` · ${r.j} junk` : ""}
+                </div>
+              </div>
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 19, color: mColor(r.m) }}>{fmt(r.m)}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", padding: "18px 20px 8px", lineHeight: 1.6 }}>
+        Snapshot as of {data.h} holes. The scorer re-shares to update.
+        <div style={{ marginTop: 10 }}>
+          <a href={window.location.pathname} style={{ color: "#7f1d1d", fontWeight: 700, textDecoration: "none" }}>Start your own round →</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Root() {
+  const hash = window.location.hash || "";
+  if (hash.startsWith("#v=")) {
+    const data = unpackSnapshot(hash.slice(3));
+    if (data && data.p) return <StandingsView data={data} />;
+  }
+  return <WolfHammer />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+</script>
+</body>
+</html>
